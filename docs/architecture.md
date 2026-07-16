@@ -53,8 +53,8 @@ Zwei **getrennte** Kanäle über das lokale Netz (Handy-Hotspot Variante A / Pi-
 ```
 
 - **Kanal 1 — Steuerung/Status: rosbridge** ([D2]). WebSocket + JSON, roslibjs-artiges
-  Protokoll (`op: publish | subscribe | call_service | …`). Client-Bibliothek (geplant ab
-  Phase 2): **OkHttp**-WebSocket.
+  Protokoll (`op: publish | subscribe | call_service | …`). Client-Bibliothek (**seit
+  Phase 2**): **OkHttp**-WebSocket (`RosbridgeClient` → `/joy`-Publisher @ ~30 Hz).
 - **Kanal 2 — Video** ([D2]): eigener Stream-Server, **getrennt** von rosbridge. Erstwurf MJPEG,
   später RTSP/H.264 oder WebRTC. Bibliothek (geplant ab Phase 4): **Media3/ExoPlayer**.
 
@@ -81,9 +81,10 @@ PS4-Controller lieferte.
   entkoppelt von physischen Tasten. Pro Controller ein **Profil (JSON)**: Achsen-/Button-Index
   → Action. **Kein fixes Kishi-Hardcoding.**
 - **Ziel-Layout** der Normalisierung: `~/hexapod_ws/src/hexapod_teleop/config/ps4_usb.yaml`.
-- **Stand:** **Phase 1 Stufe B misst die Kishi-Rohindizes** (`AXIS_*`/`KEYCODE_*`) — das
-  Fundament der Abbildung. Die Profil-/Normalisierungs-Schicht und der `/joy`-Publisher
-  entstehen **ab Phase 2** (Contract §1).
+- **Stand:** Phase 1 hat die Kishi-Rohindizes gemessen (Contract §1). **Phase 2 realisiert die
+  Normalisierung** als **feste** Kishi→PS4-Abbildung (`toControllerInput` + `JoyMapper`) plus den
+  `/joy`-Publisher über rosbridge. Die **JSON-Profil-Verallgemeinerung [D8]** (mehrere Controller)
+  bleibt **Phase 8** — Phase 2 hält das Mapping bewusst hardcoded, aber isoliert austauschbar.
 
 ## 4. App-interne Struktur (Code)
 
@@ -108,17 +109,44 @@ Kishi ─HID─► Android ─► Activity.dispatch*Event ─► GamepadState (S
                                               GamepadReaderScreen (Compose)
 ```
 
-### 4.2 Geplante Erweiterung (Richtung, keine Festlegung)
+### 4.2 Ist-Zustand (Phase 2 — `/joy`-WebSocket-Client)
+
+Auf die Phase-1-Eingangsstufe (`GamepadState`) setzt der Steuer-Pfad auf: Normalisierung auf das
+PS4-Layout (Contract §1) + rosbridge-Transport. Details + ADRs:
+[`phase_2_joy_client_plan.md`](phase_2_joy_client_plan.md) §7.
+
+| Datei | Rolle |
+|---|---|
+| `ControllerInput.kt` | framework-freier, semantischer Eingabe-Snapshot (**rohe** Android-Werte) |
+| `GamepadExtract.kt` | `GamepadState.toControllerInput()` — Android-Konstanten → semantisch (Contract §1, deklarativ) |
+| `JoyMapper.kt` | **reine** Transform-Logik → `JoyMessage` (8 Achsen / 15 Buttons): Negierung, `1−2t`, positionsbasierte Buttons — unit-getestet |
+| `RosbridgeProtocol.kt` | rosbridge-JSON (advertise/publish/unadvertise, `org.json`) |
+| `RosbridgeClient.kt` | OkHttp-WebSocket: connect/advertise/publish/close + `ConnState`-Callback; kein Auto-Reconnect |
+| `ConnectionState.kt` | Compose-Snapshot-Halter für Verbindungs-/Sende-Zustand |
+| `ControlScreen.kt` | Connect-Leiste + `/joy`-out-Debug + eingebetteter Roh-Reader |
+| `MainActivity.kt` (erweitert) | hält `RosbridgeClient`; 30-Hz-Publish-Schleife an Activity-Lifecycle (NF1-Failsafe) |
+| `GamepadReaderScreen.kt` (→ `GamepadReaderSection`) | Roh-Reader jetzt einbettbar (kein eigenes Scroll) |
+
+**Datenfluss (Steuer-Pfad, Phase 2):**
+```
+GamepadState ─toControllerInput()─► ControllerInput ─JoyMapper─► JoyMessage
+                                                                    │ rosbridgePublishJoy (org.json)
+                                                                    ▼
+  30-Hz-Schleife (lifecycleScope, onResume↔onPause) ─► RosbridgeClient ─ws://host:9090─► rosbridge → /joy
+```
+Pause/Screen-Lock → Schleife abgebrochen → `/joy` verstummt → `cmd_vel_timeout` hält den
+Roboter (NF1).
+
+### 4.3 Geplante Erweiterung (Richtung, keine Festlegung)
 
 Wächst phasenweise; jede neue Schicht kommt **erst bei Bedarf** und über den Version-Catalog:
 
 | Ab Phase | Baustein (geplant) | Bibliothek |
 |---|---|---|
-| 2 | Controller-Profil (JSON) + Normalisierung auf PS4-Layout | — |
-| 2 | rosbridge-Client (WebSocket) + `sensor_msgs/Joy`-Publisher | OkHttp |
 | 3+ | Touch-Aktionen → Service-/Param-Calls; Status-Overlay | OkHttp |
 | 4 | Video-Vollbild (Kanal 2) | Media3/ExoPlayer |
 | 4+ | Verbindungs-/Foreground-Service (Netz-Lifecycle) | — |
+| 8 | Controller-Profil (JSON) statt fester Kishi-Abbildung [D8]; Auto-Reconnect | — |
 
 > Neue Topics/Services/Felder werden **nicht hier erfunden**: Ist etwas im Contract noch
 > `[TBD-Phase N]`, geht es als offener Punkt an die ROS/Contract-Session zurück ([D9]).

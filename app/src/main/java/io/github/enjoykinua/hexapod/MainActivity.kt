@@ -15,7 +15,12 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
 import io.github.enjoykinua.hexapod.ui.theme.Hexapod_appTheme
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
  * Phase 1 · Stufe B — Kishi-Gamepad-Hello-World.
@@ -29,6 +34,10 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var inputManager: InputManager
     private val gamepadState = GamepadState()
+    private val connection = ConnectionState()
+    private lateinit var ros: RosbridgeClient
+    private var publishJob: Job? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val deviceListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = refreshDevices()
@@ -39,7 +48,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         inputManager = getSystemService(InputManager::class.java)
-        // Bildschirm waehrend des Tests wach halten (Handy steckt im Kishi, Querformat ist im
+        // RosbridgeClient-Statuswechsel kommen vom OkHttp-Thread -> auf den Main-Thread
+        // marshallen, bevor Compose-State geschrieben wird.
+        ros = RosbridgeClient { state, err ->
+            mainHandler.post {
+                connection.state = state
+                connection.error = err
+            }
+        }
+        // Bildschirm waehrend des Fahrens wach halten (Handy steckt im Kishi, Querformat ist im
         // Manifest gesperrt). Kein Immersive-/Kiosk-Modus -> Verlassen per System-Navigation
         // bleibt normal moeglich.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -48,7 +65,13 @@ class MainActivity : ComponentActivity() {
         setContent {
             Hexapod_appTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    GamepadReaderScreen(gamepadState, Modifier.padding(innerPadding))
+                    ControlScreen(
+                        gamepadState = gamepadState,
+                        connection = connection,
+                        onConnect = { host -> ros.connect(host) },
+                        onDisconnect = { ros.disconnect() },
+                        modifier = Modifier.padding(innerPadding)
+                    )
                 }
             }
         }
@@ -59,13 +82,40 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         // Hot-Plug beobachten; Listener an den Lifecycle koppeln, sonst Leak.
-        inputManager.registerInputDeviceListener(deviceListener, Handler(Looper.getMainLooper()))
+        inputManager.registerInputDeviceListener(deviceListener, mainHandler)
         refreshDevices()
+        startPublishing()
+    }
+
+    /**
+     * 30-Hz-`/joy`-Schleife, an den Vordergrund-Lifecycle gekoppelt. Laeuft auf dem Main-
+     * Dispatcher (lifecycleScope): Snapshot-State lesen + org.json bauen + OkHttp-send sind
+     * dort unkritisch. Bei onPause abgebrochen -> Publish verstummt -> cmd_vel_timeout haelt
+     * den Roboter (NF1-Failsafe, gewollt). Es wird stets gemappt (fuer die /joy-out-Anzeige),
+     * gesendet aber nur, wenn der Client sendebereit ist.
+     */
+    private fun startPublishing() {
+        publishJob?.cancel()
+        publishJob = lifecycleScope.launch {
+            while (isActive) {
+                val joy = JoyMapper.toJoy(gamepadState.toControllerInput())
+                connection.lastJoy = joy
+                if (ros.ready) ros.publish(rosbridgePublishJoy(joy))
+                delay(PUBLISH_PERIOD_MS)
+            }
+        }
     }
 
     override fun onPause() {
         super.onPause()
         inputManager.unregisterInputDeviceListener(deviceListener)
+        publishJob?.cancel()
+        publishJob = null
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        ros.dispose()
     }
 
     /** Erstes Geraet mit Gamepad-/Joystick-Source suchen und Achsenliste vorbelegen. */
@@ -126,5 +176,9 @@ class MainActivity : ComponentActivity() {
         for (range in device.motionRanges) {
             gamepadState.onAxis(range.axis, event.getAxisValue(range.axis), range.min, range.max)
         }
+    }
+
+    companion object {
+        private const val PUBLISH_PERIOD_MS = 33L   // ~30 Hz (NF1: stetig, auch bei neutral)
     }
 }

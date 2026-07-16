@@ -7,13 +7,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,18 +23,18 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.abs
 
 /**
- * Reine Anzeige der aktuell gemessenen Kishi-Eingaben.
+ * Reine Anzeige der aktuell gemessenen Kishi-**Roh**-Eingaben (Debug/Diagnose).
  * Achsen kommen dynamisch aus den motionRanges, Buttons erscheinen bei erstem Druck.
  * Aktive Zeilen (Achse ausgelenkt / Button gedrueckt) werden hervorgehoben, damit beim
  * "eine Eingabe nach der anderen"-Vorgehen eindeutig ist, welche Konstante reagiert.
+ *
+ * **Section** (kein eigenes Scroll/fillMaxSize) — wird von [ControlScreen] in dessen
+ * Scroll-Column eingebettet.
  */
 @Composable
-fun GamepadReaderScreen(state: GamepadState, modifier: Modifier = Modifier) {
+fun GamepadReaderSection(state: GamepadState, modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         DeviceHeader(state)
@@ -160,12 +157,12 @@ private fun ButtonRow(keyCode: Int, pressed: Boolean) {
 }
 
 @Composable
-private fun SectionTitle(text: String) {
+internal fun SectionTitle(text: String) {
     Text(text, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
 }
 
 @Composable
-private fun Hint(text: String) {
+internal fun Hint(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.bodySmall,

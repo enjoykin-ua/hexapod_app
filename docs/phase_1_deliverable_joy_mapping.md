@@ -49,19 +49,21 @@
 | `buttons[8]` | Share | — | `KEYCODE_BUTTON_SELECT` („3 Punkte" links) |
 | `buttons[9]` | Options | — | `KEYCODE_BUTTON_START` („3 Striche" rechts) |
 | `buttons[10]` | PS/Guide | — | `KEYCODE_BUTTON_MODE` (Kreis-mit-Pfeil) |
-| `buttons[11]` | L3 | — | **entfällt** (Kishi V2 hat keinen Stick-Klick) → immer `0` |
-| `buttons[12]` | R3 | — | **entfällt** → immer `0` |
+| `buttons[11]` | L3 | — | `KEYCODE_BUTTON_THUMBL` (linker Stick-Klick) |
+| `buttons[12]` | R3 | — | `KEYCODE_BUTTON_THUMBR` (rechter Stick-Klick) |
+| `buttons[13]` | *(Kishi-Extra)* | — | `KEYCODE_BUTTON_C` = **L4** |
+| `buttons[14]` | *(Kishi-Extra)* | — | `KEYCODE_BUTTON_Z` = **R4** |
 
 **Wichtige Details:**
 - **Positionsbasiert** (nicht labelbasiert): Kishi ist Xbox-beschriftet (A unten, B rechts, X links,
   Y oben); die Zuordnung folgt der **physischen Position**, damit „oben drücken = Sit/Stand" am
   selben Knopf sitzt wie beim PS4 (Triangle oben). Daher Kishi-**Y → `buttons[2]`** (Triangle) und
   Kishi-**A → `buttons[0]`** (Cross).
-- **Array-Länge:** volle PS4-Länge emittieren (8 Achsen, 13 Buttons), nicht vorhandene Slots (L3/R3)
-  auf neutral (`0`). `joy_to_twist` liest 0/1/2/4/5 → die müssen belegt sein.
-- **Bonus-Buttons L4/R4** = `KEYCODE_BUTTON_C` / `KEYCODE_BUTTON_Z` (HID, entgegen Stufe-A-Annahme).
-  Aktuell **keinem PS4-Index zugeordnet** (`joy_to_twist` hat keine freie Bindung) → für spätere
-  Erweiterung reserviert, dokumentiert.
+- **Array-Länge:** volle Länge emittieren (**8 Achsen, 15 Buttons** = 13 PS4 + L4/R4), alle Slots
+  belegt. `joy_to_twist` liest 0/1/2/4/5 → die müssen belegt sein.
+- **Bonus-Buttons L4/R4** = `KEYCODE_BUTTON_C` / `KEYCODE_BUTTON_Z` (HID, entgegen Stufe-A-Annahme)
+  → im Contract als `buttons[13]`/`[14]` gesendet, von `joy_to_twist` (noch) unkonsumiert,
+  ROS-seitig jederzeit bindbar ohne App-Änderung.
 - **Screenshot-Taste** = Android-System-Taste, in der App nicht sichtbar → out of scope.
 
 ## Offene Punkte (Phase 2, per `ros2 topic echo /joy`)

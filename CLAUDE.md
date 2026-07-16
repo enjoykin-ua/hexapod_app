@@ -168,12 +168,26 @@ Sticks/Tasten fahren den Roboter, der Handy-Screen zeigt Video-Vollbild + Overla
 |---|---|
 | `CLAUDE.md` | diese Datei (App-Arbeitsanweisung) |
 | `README.md` | dünn: Build/Run + Zeiger |
+| `docs/NEXT.md` | **➜ zuerst lesen:** aktueller Stand + nahtloser Wiedereinstieg (Rolling-Doc) |
 | `docs/architecture.md` | App-Architektur: Laufzeit-Kanäle, Eingabe-Pipeline, Code-Struktur (Ist + geplant) |
 | `docs/build_and_deploy.md` | Android-Umgebung, **Wireless ADB**, Gradle-Build, Install auf S22+ |
 | `docs/testing_guide.md` | Schritt-für-Schritt: App aufspielen + Kishi systematisch vermessen |
-| `docs/phase_1_stage_b_brief.md` | aktuelle Aufgabe: Kishi-Gamepad-Hello-World + Roh-Index-Tabelle |
+| `docs/phase_1_stage_b_brief.md` | Phase 1 (erledigt): Kishi-Gamepad-Hello-World + Roh-Index-Tabelle |
 | `docs/phase_1_stage_b_implementation.md` | Stufe B: was gebaut wurde, ADRs, Done-Vertrag-Stand |
 | `docs/phase_1_deliverable_joy_mapping.md` | Phase-1-Deliverable: fertiges Kishi→PS4-`/joy`-Mapping (Übergabe an ROS/Contract-Session) |
+| `docs/phase_2_joy_client_plan.md` | Phase-2-App-Plan: `/joy`-WebSocket-Client (Logik/ADRs, Tests, Done-Vertrag) |
 
 **Roboter-Seite (read-only, `~/hexapod_ws/project_finalization/app_control_requirements/`):**
-`00_overview.md` · `requirements.md` · `decisions.md` · `interface_contract.md` · `phase_1_*`.
+`00_overview.md` · `requirements.md` · `decisions.md` · **`interface_contract.md` (Interface, SoT)** ·
+`phase_<n>_*` (plan/progress/test_commands je Phase).
+
+> **➜ Aktuelle Phasen-Aufgabe (immer zuerst lesen):** Das *Interface* (Topics/Services/QoS)
+> steht im **`interface_contract.md`** (versioniert). Die *App-Aufgabe der laufenden Phase*
+> steht im **App-Seite-Abschnitt des jeweiligen `phase_<n>_..._plan.md` in hexapod_ws** —
+> **nicht im Chat** (D9/D10: Kopplung über den versionierten Contract/Plan, nicht mündlich).
+> Phase 1 (Hello-World) war app-lokal (`docs/phase_1_stage_b_brief.md`); **ab Phase 2** =
+> hexapod_ws-Phasenplan.
+> **Aktuell: Phase 2** — `/joy`-WebSocket-Client. Brief:
+> `~/hexapod_ws/project_finalization/app_control_requirements/phase_2_control_baseline_plan.md` §5
+> + Interface `interface_contract.md` v0.3 (§0 QoS, §1 Layout). Referenz-Publisher:
+> `~/hexapod_ws/tools/joy_ws_test_client.py`.

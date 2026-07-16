@@ -12,7 +12,7 @@
 - `./gradlew testDebugUnitTest` → **grün** (`GamepadFormatTest`: 6 Tests, 0 skipped, 0 failures).
 - Geräte-Verifikation am S22+ **abgeschlossen** (User, 2026-07-15): Kishi gelistet, alle
   Achsen/Buttons live vermessen **inkl. Vorzeichen**, Roh-Index-Tabelle gefüllt (§6a),
-  Passform mit Hülle ok, L3/R3 existieren am Kishi V2 nicht. **Phase 1 fertig — Kishi tauglich: ja.**
+  Passform mit Hülle ok, L3/R3 (Stick-Klick) vorhanden. **Phase 1 fertig — Kishi tauglich: ja.**
 
 ## 2. Dateien
 
@@ -91,7 +91,7 @@ Geräte-Prüfung ist manuell über den Testing-Guide).
 | P1.4 beide Sticks liefern Live-Werte (~0 / ~±1) | ✅ analog −1..0..+1 (`AXIS_X/Y`, `AXIS_Z/RZ`) |
 | P1.5 alle Buttons + D-Pad + L1/R1 + L2/R2 sichtbar (mit Konstante) | ✅ inkl. Bonus L4/R4 (§6a) |
 | P1.6 Roh-Index-Tabelle gefüllt | ✅ §6a |
-| P1.7 Trigger analog/digital + Passform mit Hülle | ✅ Trigger analog 0..1; Passform mit Hülle ok; L3/R3 am Kishi V2 nicht vorhanden |
+| P1.7 Trigger analog/digital + Passform mit Hülle | ✅ Trigger analog 0..1; Passform mit Hülle ok; L3/R3 (THUMBL/THUMBR) vorhanden |
 
 ## 6a. Roh-Index-Tabelle (P1.6 — gemessen am S22+, 2026-07-15)
 
@@ -120,7 +120,7 @@ Geräte-Prüfung ist manuell über den Testing-Guide).
 | „3 Punkte" (links) | `KEYCODE_BUTTON_SELECT` | 0/1 | digital | `buttons[8]` (Share) |
 | „3 Striche" (rechts) | `KEYCODE_BUTTON_START` | 0/1 | digital | `buttons[9]` (Options) |
 | Kreis-mit-Pfeil (unten rechts) | `KEYCODE_BUTTON_MODE` | 0/1 | digital | `buttons[10]` (PS/Guide) |
-| L3/R3 (Stick-Klick) | **am Kishi V2 nicht vorhanden** | — | — | — (entfällt) |
+| L3/R3 (Stick-Klick) | `KEYCODE_BUTTON_THUMBL` / `_THUMBR` | 0/1 | digital | `buttons[11]` / `buttons[12]` |
 | Screenshot-Taste | nicht erkannt (Android-System-Taste) | — | — | — (out of scope, wie erwartet) |
 
 **Befunde / Auffälligkeiten (an Contract-Session):**
@@ -139,8 +139,9 @@ Geräte-Prüfung ist manuell über den Testing-Guide).
    (`axes[0/1/3/4] = −AXIS_X/Y/Z/RZ`). Endgültige Bestätigung Phase 2 per `ros2 topic echo /joy`;
    Fallback-Knopf bleiben die `sign_*`-Params. D-Pad-Vorzeichen (`HAT_X/Y`) analog in Phase 2
    fixieren (digital, unkritisch, per `sign_dpad_*` justierbar).
-5. **L3/R3 existieren am Kishi V2 nicht** (kein Stick-Klick) → entfällt. `joy_to_twist` nutzt sie
-   ohnehin nicht.
+5. **L3/R3 vorhanden** (Stick-Klick = `THUMBL`/`THUMBR`) — beim ersten Durchgang übersehen, die
+   Events sind da. Im Contract `buttons[11]`/`[12]`; `joy_to_twist` konsumiert sie (noch) nicht,
+   ROS-seitig später bindbar.
 
 ## 7. Bekannte Grenzen (Self-Review 🟡/🟢)
 
