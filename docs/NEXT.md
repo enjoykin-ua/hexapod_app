@@ -19,6 +19,27 @@ Sticks negiert, Trigger `1−2t`, positionsbasierte Buttons, 8 Achsen/15 Buttons
 WebSocket an rosbridge `/joy` **@ ~30 Hz** publishen. Connect-Leiste + „/joy ausgehend"-Debug im
 Screen. Publish an den Activity-Lifecycle gekoppelt (Pause → Stopp → NF1-Failsafe).
 
+### Befund 2026-07-16 (P2A.10, echtes Gerät + Sim): D-Pad-Vorzeichen
+
+Beim Integrationstest kam das **digitale Steuerkreuz (D-Pad)** spiegelverkehrt an — ↑/↓ **und**
+←/→. Analog-Sticks: **korrekt** (bleiben negiert). Fix app-seitig im `JoyMapper` (nicht
+`sign_dpad_*`, damit der direkte PS4-USB-Fallback [NF7] korrekt bleibt):
+
+- `axes[7]` (D-Pad ↑/↓, Tempo) **negiert** — deckt sich mit **Contract v0.4**, war in der App
+  nur noch nicht angewandt.
+- `axes[6]` (D-Pad ←/→, Gangart) **negiert** — **widerspricht** Contract v0.4 („pass-through
+  ok") → **offener Punkt für Contract v0.5 (ROS-Session)**.
+
+Tests angepasst (`dpad_both_axes_negated`), `testDebugUnitTest` ✅.
+
+**Offen:**
+- **Contract v0.5 (ROS-Session):** `axes[6]`/D-Pad-X-Inversion nachziehen + Changelog; die
+  v0.4-Aussage „Rest bestätigt" für D-Pad-X korrigieren.
+- **Am Gerät gegenprüfen** (`ros2 topic echo /joy`): D-Pad ↑ → `axes[7]=+1`, D-Pad → (rechts) →
+  `axes[6]` = erwartetes PS4-Vorzeichen; Gangart wechselt in die intuitive Richtung.
+- **Rechter Analog-Stick** (Drehen, `axes[3]/[4]`) im selben Zug verifizieren — noch nicht am
+  echten Gerät geprüft.
+
 ## Die zwei „Test"-Ebenen
 
 1. **App-Logik ohne Hardware:** `app/src/test/java/io/github/enjoykinua/hexapod/JoyMapperTest.kt`

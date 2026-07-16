@@ -56,10 +56,12 @@ class JoyMapperTest {
     }
 
     @Test
-    fun dpad_passthrough_without_negation() {
+    fun dpad_both_axes_negated() {
+        // Kishi HAT: rechts=+1 / hoch=−1 → PS4-/joy erwartet die Gegenrichtung.
+        // axes[7] per Contract v0.4, axes[6] per App+ROS-Test 2026-07-16.
         val j = JoyMapper.toJoy(ControllerInput(dpadX = 1f, dpadY = -1f))
-        assertEquals(1f, j.axes[6], eps)
-        assertEquals(-1f, j.axes[7], eps)
+        assertEquals(-1f, j.axes[6], eps)
+        assertEquals(1f, j.axes[7], eps)
     }
 
     @Test

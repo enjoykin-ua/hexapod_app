@@ -13,6 +13,10 @@ data class JoyMessage(val axes: List<Float>, val buttons: List<Int>)
  *
  * Regeln (§1):
  * - Sticks negiert (Kishi hoch/links = −1, PS4-`/joy` erwartet +1).
+ * - **D-Pad beide Achsen negiert** (Kishi HAT hoch/links = −1, PS4 erwartet Gegenrichtung):
+ *   `axes[7]` ↑/↓ per Contract v0.4, `axes[6]` ←/→ per App+ROS-Test 2026-07-16 (Richtung war
+ *   spiegelverkehrt). Fix app-seitig (nicht `sign_dpad_*`), damit der direkte PS4-USB-Fallback
+ *   korrekt bleibt. `axes[6]` weicht von Contract v0.4 ab → Bump v0.5 (ROS-Session) offen.
  * - Trigger `1 − 2·t` **jeden Frame** (idle 0 → +1; voll 1 → −1).
  * - Face-Buttons **positionsbasiert** (Kishi Xbox-beschriftet): A=unten→0, B=rechts→1,
  *   Y=oben→2, X=links→3.
@@ -30,8 +34,8 @@ object JoyMapper {
         axes[3] = -input.rightStickX         // axis_rx
         axes[4] = -input.rightStickY         // axis_ry
         axes[5] = 1f - 2f * input.r2         // axis_r2
-        axes[6] = input.dpadX                // axis_dpad_x (Vorzeichen Integration)
-        axes[7] = input.dpadY                // axis_dpad_y
+        axes[6] = -input.dpadX               // axis_dpad_x — negiert (Test 2026-07-16; Contract-v0.5-Bump offen)
+        axes[7] = -input.dpadY               // axis_dpad_y — negiert (Contract v0.4)
 
         val buttons = IntArray(BUTTONS)
         buttons[0] = input.a.bit()           // Cross    (unten)

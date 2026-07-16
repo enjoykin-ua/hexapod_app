@@ -187,7 +187,7 @@ Sticks/Tasten fahren den Roboter, der Handy-Screen zeigt Video-Vollbild + Overla
 > **nicht im Chat** (D9/D10: Kopplung über den versionierten Contract/Plan, nicht mündlich).
 > Phase 1 (Hello-World) war app-lokal (`docs/phase_1_stage_b_brief.md`); **ab Phase 2** =
 > hexapod_ws-Phasenplan.
-> **Aktuell: Phase 2** — `/joy`-WebSocket-Client. Brief:
-> `~/hexapod_ws/project_finalization/app_control_requirements/phase_2_control_baseline_plan.md` §5
-> + Interface `interface_contract.md` v0.3 (§0 QoS, §1 Layout). Referenz-Publisher:
-> `~/hexapod_ws/tools/joy_ws_test_client.py`.
+> **Aktuell: Phase 3** — Connect-/Start-Screen + Lifecycle-Buttons. Brief:
+> `~/hexapod_ws/project_finalization/app_control_requirements/phase_3_lifecycle_plan.md` §5
+> + Interface `interface_contract.md` v0.5 (§2a Launcher-Services, §3 `/hexapod/bringup_running`).
+> (Phase 2 `/joy`-Client = erledigt, `phase_2_control_baseline_plan.md` §5.)
