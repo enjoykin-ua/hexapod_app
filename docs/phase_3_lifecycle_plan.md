@@ -133,7 +133,9 @@ fun enablement(conn, stack, pending): Map<Action,Boolean>
   Pi aus    (pi_shutdown)  : Basis                          // immer, wenn verbunden & idle
 ```
 Nach `bringup_start`/`_stop`-Erfolg → **Status neu pollen** (1e) → `stack`/`statusMessage`
-aktualisieren.
+aktualisieren. Zusätzlich ein **„Status aktualisieren"**-Button (aktiv wenn verbunden & idle),
+der `/hexapod_bringup_status` **manuell** pollt → macht zwischen Aktionen einen Selbst-Crash
+sichtbar (schlanker Ersatz für den späteren Live-Push, Option B). Ergibt zusammen die **6 Buttons**.
 
 **2-stufiger Shutdown-Dialog** (Contract §2a Pflicht):
 - Stufe 1: „Pi ausschalten?" [Abbrechen] [Weiter]
@@ -206,17 +208,17 @@ sichtbar — akzeptiert, [ADR-3]).
 
 ```
 Phase 3 (App — Connect-/Lifecycle-Screen):
-- [ ] P3A.1  RosbridgeClient.callService: id-Korrelation, Response-Routing, Timeout, thread-safe pending
-- [ ] P3A.2  RosbridgeProtocol: rosbridgeCallService(frame) + parseServiceResponse(raw)  [org.json]
-- [ ] P3A.3  interpretStatus(message)->StackState  (rein, unit-getestet U1)
-- [ ] P3A.4  LifecycleState (stack, statusMessage, pendingAction, shuttingDown)
-- [ ] P3A.5  enablement(conn,stack,pending) Button-FSM  (rein, unit-getestet U2)
-- [ ] P3A.6  UI: Lifecycle-Karte (Status + 6 Buttons); Dev/Debug einklappbar (default zu)
-- [ ] P3A.7  2-stufiger Shutdown-Dialog -> pi_shutdown; „heruntergefahren" nach gewolltem Drop
-- [ ] P3A.8  Status-Polling: nach Connect + nach Start/Stop
-- [ ] P3A.9  Graceful Disconnect/Error: stack->UNKNOWN, pending-Calls failen, manuell wieder verbindbar
-- [ ] P3A.10 assembleDebug + testDebugUnitTest gruen; Phase-2-/joy-Pfad unveraendert
-- [ ] P3A.11 Kritischer Self-Review (Tabelle OK/fixen/vormerken/spaeter) + Doku-Nachzug
+- [x] P3A.1  RosbridgeClient.callService: id-Korrelation, Response-Routing, Timeout, thread-safe pending
+- [x] P3A.2  RosbridgeProtocol: rosbridgeCallService(frame) + parseServiceResponse(raw)  [org.json]
+- [x] P3A.3  interpretStatus(message)->StackState  (rein, unit-getestet U1)
+- [x] P3A.4  LifecycleState (stack, statusMessage, pendingAction, shuttingDown, notice)
+- [x] P3A.5  buttonEnablement(conn,stack,pending) Button-FSM  (rein, unit-getestet U2)
+- [x] P3A.6  UI: Lifecycle-Karte (Status-Zeile + 5 Aktions-Buttons + „Status aktualisieren"); Dev/Debug einklappbar (default zu)
+- [x] P3A.7  2-stufiger Shutdown-Dialog -> pi_shutdown; „heruntergefahren" nach gewolltem Drop
+- [x] P3A.8  Status-Polling: nach Connect + nach Start/Stop + manuell
+- [x] P3A.9  Graceful Disconnect/Error: stack->UNKNOWN, pending-Calls failen, manuell wieder verbindbar
+- [x] P3A.10 assembleDebug + testDebugUnitTest gruen (26/0); Phase-2-/joy-Pfad unveraendert
+- [x] P3A.11 Kritischer Self-Review + Doku-Nachzug (NEXT.md + CLAUDE-Nav)
 - [ ] P3A.12 [Integration, User] Click-Through am Sim: Start/Aufstehen/Fahren/Hinsetzen/Stop/Shutdown-Dry-Run
 --- Schritt 2 (Nachzug, erst nach P3A.12) ---
 - [ ] P3A.13 Option B: latched-Subscribe /hexapod/bringup_running (expliziter qos-Frame §4.1) als Live-Push ZUSAETZLICH zum Polling; Latch in der Integration empirisch bestaetigt

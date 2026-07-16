@@ -1,6 +1,7 @@
 package io.github.enjoykinua.hexapod
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,14 +11,18 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -31,16 +36,19 @@ import androidx.compose.ui.unit.dp
 private val AXIS_LABELS = listOf("lx", "ly", "l2", "rx", "ry", "r2", "dpadX", "dpadY")
 
 /**
- * Phase-2-Hauptschirm: rosbridge-Connect-Leiste + Anzeige der ausgehenden `/joy`-Nachricht +
- * der bestehende Kishi-Roh-Reader (Debug). **Ein** Scroll-Container; die Sub-Sections scrollen
- * nicht selbst.
+ * Phase-3-Hauptschirm: Connect-Leiste + **Lifecycle-Karte** (Stack-Status + Buttons +
+ * 2-stufiger Shutdown-Dialog); der Phase-2-Debug (`/joy`-out + Roh-Reader) liegt als
+ * **einklappbarer** Dev-Bereich darunter (default zu). **Ein** Scroll-Container.
  */
 @Composable
 fun ControlScreen(
     gamepadState: GamepadState,
     connection: ConnectionState,
+    lifecycle: LifecycleState,
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
+    onAction: (LifecycleAction) -> Unit,
+    onRefreshStatus: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -51,9 +59,9 @@ fun ControlScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         ConnectBar(connection, onConnect, onDisconnect)
-        JoyOutSection(connection)
+        LifecycleCard(connection, lifecycle, onAction, onRefreshStatus)
         HorizontalDivider()
-        GamepadReaderSection(gamepadState)
+        DebugSection(gamepadState, connection)
     }
 }
 
@@ -120,10 +128,169 @@ private fun StatusLine(connection: ConnectionState) {
     )
 }
 
+// --- Phase 3: Lifecycle-Steuerung ---
+
+@Composable
+private fun LifecycleCard(
+    connection: ConnectionState,
+    lifecycle: LifecycleState,
+    onAction: (LifecycleAction) -> Unit,
+    onRefreshStatus: () -> Unit,
+) {
+    val enabled = buttonEnablement(connection.state, lifecycle.stack, lifecycle.pendingAction)
+    val idle = connection.state == ConnState.CONNECTED && lifecycle.pendingAction == null
+    var shutdownStage by remember { mutableStateOf(0) }   // 0 = zu, 1 = Stufe 1, 2 = Stufe 2
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .padding(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Text("Steuerung", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        StackStatusLine(connection, lifecycle)
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActionButton(LifecycleAction.START, enabled, lifecycle.pendingAction, onAction, Modifier.weight(1f))
+            ActionButton(LifecycleAction.STOP, enabled, lifecycle.pendingAction, onAction, Modifier.weight(1f))
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ActionButton(LifecycleAction.STAND_UP, enabled, lifecycle.pendingAction, onAction, Modifier.weight(1f))
+            ActionButton(LifecycleAction.SIT_DOWN, enabled, lifecycle.pendingAction, onAction, Modifier.weight(1f))
+        }
+        Button(onClick = onRefreshStatus, enabled = idle, modifier = Modifier.fillMaxWidth()) {
+            Text("Status aktualisieren")
+        }
+        Button(
+            onClick = { shutdownStage = 1 },
+            enabled = enabled[LifecycleAction.PI_SHUTDOWN] == true,
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(
+                if (lifecycle.pendingAction == LifecycleAction.PI_SHUTDOWN) "Pi ausschalten …" else "Pi ausschalten"
+            )
+        }
+
+        lifecycle.notice?.let {
+            Text(
+                it,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    when (shutdownStage) {
+        1 -> ShutdownDialog(
+            title = "Pi ausschalten?",
+            body = "Der Roboter setzt sich hin und der Pi wird heruntergefahren.",
+            confirmText = "Weiter",
+            onConfirm = { shutdownStage = 2 },
+            onCancel = { shutdownStage = 0 },
+        )
+        2 -> ShutdownDialog(
+            title = "Wirklich herunterfahren?",
+            body = "Die Verbindung wird danach getrennt. Nicht rückgängig.",
+            confirmText = "Ja, ausschalten",
+            destructive = true,
+            onConfirm = { shutdownStage = 0; onAction(LifecycleAction.PI_SHUTDOWN) },
+            onCancel = { shutdownStage = 0 },
+        )
+    }
+}
+
+@Composable
+private fun ActionButton(
+    action: LifecycleAction,
+    enabled: Map<LifecycleAction, Boolean>,
+    pending: LifecycleAction?,
+    onAction: (LifecycleAction) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Button(
+        onClick = { onAction(action) },
+        enabled = enabled[action] == true,
+        modifier = modifier
+    ) {
+        Text(if (pending == action) "${action.label} …" else action.label)
+    }
+}
+
+@Composable
+private fun StackStatusLine(connection: ConnectionState, lifecycle: LifecycleState) {
+    val disconnected = connection.state != ConnState.CONNECTED
+    val (label, color) = when {
+        lifecycle.shuttingDown && disconnected ->
+            "heruntergefahren" to MaterialTheme.colorScheme.onSurfaceVariant
+        disconnected ->
+            "—  (nicht verbunden)" to MaterialTheme.colorScheme.onSurfaceVariant
+        else -> when (lifecycle.stack) {
+            StackState.RUNNING -> (lifecycle.statusMessage ?: "läuft") to MaterialTheme.colorScheme.primary
+            StackState.STOPPED -> "gestoppt" to MaterialTheme.colorScheme.onSurfaceVariant
+            StackState.UNKNOWN -> "unbekannt" to MaterialTheme.colorScheme.onSurfaceVariant
+        }
+    }
+    Text(
+        "Stack: $label",
+        color = color,
+        fontFamily = FontFamily.Monospace,
+        style = MaterialTheme.typography.bodyMedium
+    )
+}
+
+@Composable
+private fun ShutdownDialog(
+    title: String,
+    body: String,
+    confirmText: String,
+    destructive: Boolean = false,
+    onConfirm: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text(title) },
+        text = { Text(body) },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(confirmText, color = if (destructive) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+            }
+        },
+        dismissButton = { TextButton(onClick = onCancel) { Text("Abbrechen") } },
+    )
+}
+
+// --- Phase 2: Debug (einklappbar, default zu) ---
+
+@Composable
+private fun DebugSection(gamepadState: GamepadState, connection: ConnectionState) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(
+            (if (expanded) "▾ " else "▸ ") + "Dev/Debug (/joy-out + Roh-Reader)",
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 4.dp)
+        )
+        if (expanded) {
+            JoyOutSection(connection)
+            HorizontalDivider()
+            GamepadReaderSection(gamepadState)
+        }
+    }
+}
+
 @Composable
 private fun JoyOutSection(connection: ConnectionState) {
     // Read von lastJoy bewusst HIER (nicht in ControlScreen), damit nur diese Section bei
-    // ~30 Hz rekomponiert und Connect-Bar/Roh-Reader ruhig bleiben.
+    // ~30 Hz rekomponiert und Connect-Bar/Lifecycle/Roh-Reader ruhig bleiben.
     val joy = connection.lastJoy
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         SectionTitle("/joy ausgehend (~30 Hz, gemappt)")

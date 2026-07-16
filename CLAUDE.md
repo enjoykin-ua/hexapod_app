@@ -176,6 +176,7 @@ Sticks/Tasten fahren den Roboter, der Handy-Screen zeigt Video-Vollbild + Overla
 | `docs/phase_1_stage_b_implementation.md` | Stufe B: was gebaut wurde, ADRs, Done-Vertrag-Stand |
 | `docs/phase_1_deliverable_joy_mapping.md` | Phase-1-Deliverable: fertiges Kishi→PS4-`/joy`-Mapping (Übergabe an ROS/Contract-Session) |
 | `docs/phase_2_joy_client_plan.md` | Phase-2-App-Plan: `/joy`-WebSocket-Client (Logik/ADRs, Tests, Done-Vertrag) |
+| `docs/phase_3_lifecycle_plan.md` | Phase-3-App-Plan: Connect-/Lifecycle-Screen (`call_service`, Option A/B, ADRs, Tests, Done-Vertrag) |
 
 **Roboter-Seite (read-only, `~/hexapod_ws/project_finalization/app_control_requirements/`):**
 `00_overview.md` · `requirements.md` · `decisions.md` · **`interface_contract.md` (Interface, SoT)** ·

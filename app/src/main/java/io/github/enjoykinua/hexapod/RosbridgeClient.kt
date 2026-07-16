@@ -12,14 +12,17 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 enum class ConnState { DISCONNECTED, CONNECTING, CONNECTED, ERROR }
 
 /**
  * Dünner rosbridge-WebSocket-Client (OkHttp). Verbindet sich mit `ws://host:port`, advertised
- * `/joy` und sendet publish-Frames. **Kein Auto-Reconnect** (Phase 8) — Connect/Disconnect ist
- * manuell.
+ * `/joy` und sendet publish-Frames; ruft ab Phase 3 zusätzlich Services auf ([callService],
+ * `call_service`/`service_response` mit id-Korrelation). **Kein Auto-Reconnect** (Phase 8) —
+ * Connect/Disconnect ist manuell.
  *
  * **Threading:** OkHttp-Callbacks laufen auf einem OkHttp-Thread. [onState] wird von dort
  * aufgerufen; der Aufrufer (Activity) muss auf den Main-Thread marshallen, bevor er
@@ -46,6 +49,10 @@ class RosbridgeClient(
     @Volatile var ready: Boolean = false
         private set
 
+    /** Offene Service-Calls (id → Callback). Zugriff aus OkHttp- (onMessage) + Main-Thread. */
+    private val pending = ConcurrentHashMap<String, (ServiceResult) -> Unit>()
+    private val callCounter = AtomicInteger()
+
     fun connect(host: String, port: Int = DEFAULT_PORT) {
         if (socket != null) return   // schon verbunden/verbindend
         onState(ConnState.CONNECTING, null)
@@ -68,7 +75,15 @@ class RosbridgeClient(
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
-                Log.d(TAG, "rosbridge → $text")   // Status/Fehler-Frames von rosbridge
+                val resp = parseServiceResponse(text)
+                if (resp != null) {
+                    // genau einmal: remove ist atomar (Antwort ODER Timeout, nie beides)
+                    pending.remove(resp.id)?.invoke(
+                        ServiceResult(ok = resp.result && resp.success, message = resp.message)
+                    )
+                } else {
+                    Log.d(TAG, "rosbridge → $text")   // Status/Fehler-Frames von rosbridge
+                }
             }
 
             // Callbacks eines bereits ersetzten/getrennten Sockets ignorieren, damit ein
@@ -92,6 +107,28 @@ class RosbridgeClient(
         if (ready) socket?.send(json)
     }
 
+    /**
+     * Ruft einen rosbridge-Service (std_srvs/Trigger) auf. [onResult] wird **genau einmal**
+     * aufgerufen — bei Antwort, [CALL_TIMEOUT_MS]-Timeout oder Verbindungsabbruch. **Threading:**
+     * [onResult] feuert vom OkHttp-/Coroutine-Thread → der Aufrufer marshallt auf Main (wie [onState]).
+     */
+    fun callService(service: String, onResult: (ServiceResult) -> Unit) {
+        val s = socket
+        if (s == null || !isOpen) {
+            onResult(ServiceResult(ok = false, message = "nicht verbunden"))
+            return
+        }
+        val id = "call-${callCounter.incrementAndGet()}"
+        pending[id] = onResult
+        s.send(rosbridgeCallService(id, service))
+        scope.launch {
+            delay(CALL_TIMEOUT_MS)
+            pending.remove(id)?.invoke(
+                ServiceResult(ok = false, message = "Timeout (${CALL_TIMEOUT_MS / 1000} s)")
+            )
+        }
+    }
+
     fun disconnect() {
         socket?.let { s ->
             if (isOpen) s.send(rosbridgeUnadvertiseJoy())
@@ -112,12 +149,17 @@ class RosbridgeClient(
         socket = null
         isOpen = false
         ready = false
+        // offene Calls abschließen, damit Buttons nicht in "…" hängen bleiben
+        for (id in pending.keys.toList()) {
+            pending.remove(id)?.invoke(ServiceResult(ok = false, message = "Verbindung getrennt"))
+        }
     }
 
     companion object {
         private const val TAG = "RosbridgeClient"
         const val DEFAULT_PORT = 9090
         private const val READY_DELAY_MS = 500L
+        private const val CALL_TIMEOUT_MS = 8_000L   // Service-Antwort-Timeout (User-Entscheidung P3)
         private const val NORMAL_CLOSURE = 1000
     }
 }

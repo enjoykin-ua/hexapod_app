@@ -35,6 +35,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var inputManager: InputManager
     private val gamepadState = GamepadState()
     private val connection = ConnectionState()
+    private val lifecycleState = LifecycleState()
     private lateinit var ros: RosbridgeClient
     private var publishJob: Job? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -54,6 +55,21 @@ class MainActivity : ComponentActivity() {
             mainHandler.post {
                 connection.state = state
                 connection.error = err
+                when (state) {
+                    // frisch verbunden → Stack-Status holen (Option A: Polling)
+                    ConnState.CONNECTED -> {
+                        lifecycleState.shuttingDown = false
+                        lifecycleState.notice = null
+                        pollStatus()
+                    }
+                    // getrennt/Fehler → Lifecycle-Zustand invalidieren, laufende Aktion lösen
+                    ConnState.DISCONNECTED, ConnState.ERROR -> {
+                        lifecycleState.stack = StackState.UNKNOWN
+                        lifecycleState.statusMessage = null
+                        lifecycleState.pendingAction = null
+                    }
+                    ConnState.CONNECTING -> {}
+                }
             }
         }
         // Bildschirm waehrend des Fahrens wach halten (Handy steckt im Kishi, Querformat ist im
@@ -68,8 +84,11 @@ class MainActivity : ComponentActivity() {
                     ControlScreen(
                         gamepadState = gamepadState,
                         connection = connection,
+                        lifecycle = lifecycleState,
                         onConnect = { host -> ros.connect(host) },
-                        onDisconnect = { ros.disconnect() },
+                        onDisconnect = { lifecycleState.shuttingDown = false; ros.disconnect() },
+                        onAction = { action -> onLifecycleAction(action) },
+                        onRefreshStatus = { pollStatus() },
                         modifier = Modifier.padding(innerPadding)
                     )
                 }
@@ -102,6 +121,43 @@ class MainActivity : ComponentActivity() {
                 connection.lastJoy = joy
                 if (ros.ready) ros.publish(rosbridgePublishJoy(joy))
                 delay(PUBLISH_PERIOD_MS)
+            }
+        }
+    }
+
+    // --- Phase 3: Lifecycle-Services (rosbridge call_service; Callbacks auf Main marshallen) ---
+
+    /** Stack-Status pollen (Option A): nach Connect + nach jedem Start/Stop + manuell. */
+    private fun pollStatus() {
+        ros.callService(BRINGUP_STATUS_SERVICE) { result ->
+            mainHandler.post {
+                if (result.ok) {
+                    lifecycleState.stack = interpretStatus(result.message)
+                    lifecycleState.statusMessage = result.message
+                } else {
+                    lifecycleState.stack = StackState.UNKNOWN
+                    lifecycleState.statusMessage = null
+                }
+            }
+        }
+    }
+
+    /**
+     * Einen Lifecycle-Button ausführen: Buttons sperren ([LifecycleState.pendingAction]) →
+     * Service rufen → Rückmeldung anzeigen. Bei Start/Stop danach Status neu pollen. PI_SHUTDOWN
+     * setzt shuttingDown (ein danach folgender Drop = „heruntergefahren", nicht Fehler).
+     */
+    private fun onLifecycleAction(action: LifecycleAction) {
+        lifecycleState.shuttingDown = action == LifecycleAction.PI_SHUTDOWN
+        lifecycleState.pendingAction = action
+        lifecycleState.notice = null
+        ros.callService(action.service) { result ->
+            mainHandler.post {
+                lifecycleState.pendingAction = null
+                lifecycleState.notice = "${action.label}: ${result.message}"
+                if (result.ok && (action == LifecycleAction.START || action == LifecycleAction.STOP)) {
+                    pollStatus()
+                }
             }
         }
     }
