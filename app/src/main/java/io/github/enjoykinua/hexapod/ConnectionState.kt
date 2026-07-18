@@ -13,6 +13,13 @@ class ConnectionState {
     var state by mutableStateOf(ConnState.DISCONNECTED)
     var error by mutableStateOf<String?>(null)
 
+    /**
+     * Eingegebener rosbridge-Host (IP ohne Schema/Port). Hochgezogen aus [ControlScreen] (war dort
+     * lokal), damit der Fahr-Screen die **Video-URL** daraus ableiten kann (`videoStreamUrl`,
+     * Contract §0/§5: gleiche IP, nur Port 8080).
+     */
+    var host by mutableStateOf("")
+
     /** Zuletzt gebaute `/joy`-Nachricht (für die Debug-Anzeige / Vorzeichen-Check). */
     var lastJoy by mutableStateOf<JoyMessage?>(null)
 }

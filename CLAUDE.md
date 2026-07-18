@@ -177,6 +177,7 @@ Sticks/Tasten fahren den Roboter, der Handy-Screen zeigt Video-Vollbild + Overla
 | `docs/phase_1_deliverable_joy_mapping.md` | Phase-1-Deliverable: fertiges Kishi→PS4-`/joy`-Mapping (Übergabe an ROS/Contract-Session) |
 | `docs/phase_2_joy_client_plan.md` | Phase-2-App-Plan: `/joy`-WebSocket-Client (Logik/ADRs, Tests, Done-Vertrag) |
 | `docs/phase_3_lifecycle_plan.md` | Phase-3-App-Plan: Connect-/Lifecycle-Screen (`call_service`, Option A/B, ADRs, Tests, Done-Vertrag) |
+| `docs/phase_4_video_shell_plan.md` | Phase-4-App-Plan: Fahr-Screen-Shell + Vollbild-Video (eigener OkHttp-MJPEG-Decoder, Center-Toggle, Slot-Vertrag §5, ADRs, Tests, Done-Vertrag) |
 
 **Roboter-Seite (read-only, `~/hexapod_ws/project_finalization/app_control_requirements/`):**
 `00_overview.md` · `requirements.md` · `decisions.md` · **`interface_contract.md` (Interface, SoT)** ·
@@ -188,7 +189,8 @@ Sticks/Tasten fahren den Roboter, der Handy-Screen zeigt Video-Vollbild + Overla
 > **nicht im Chat** (D9/D10: Kopplung über den versionierten Contract/Plan, nicht mündlich).
 > Phase 1 (Hello-World) war app-lokal (`docs/phase_1_stage_b_brief.md`); **ab Phase 2** =
 > hexapod_ws-Phasenplan.
-> **Aktuell: Phase 3** — Connect-/Start-Screen + Lifecycle-Buttons. Brief:
-> `~/hexapod_ws/project_finalization/app_control_requirements/phase_3_lifecycle_plan.md` §5
-> + Interface `interface_contract.md` v0.5 (§2a Launcher-Services, §3 `/hexapod/bringup_running`).
-> (Phase 2 `/joy`-Client = erledigt, `phase_2_control_baseline_plan.md` §5.)
+> **Aktuell: Phase 4** — Video-Vollbild + UI-Shell (Fahr-Screen). Brief:
+> `~/hexapod_ws/project_finalization/app_control_requirements/phase_4_video_shell_plan.md` §5
+> + Interface `interface_contract.md` v0.7 (§5 Video/MJPEG :8080 `/camera/image_raw`, §0 Adressierung).
+> Phase 4 = Shell + Video + **leere positionierte Overlay-Slots** (Slot-Vertrag für Phase 5).
+> (Phase 3 Lifecycle-Screen = erledigt; Phase 2 `/joy`-Client = erledigt.)

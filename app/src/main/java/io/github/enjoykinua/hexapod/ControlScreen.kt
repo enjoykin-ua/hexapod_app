@@ -49,6 +49,7 @@ fun ControlScreen(
     onDisconnect: () -> Unit,
     onAction: (LifecycleAction) -> Unit,
     onRefreshStatus: () -> Unit,
+    onDrive: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -60,6 +61,15 @@ fun ControlScreen(
     ) {
         ConnectBar(connection, onConnect, onDisconnect)
         LifecycleCard(connection, lifecycle, onAction, onRefreshStatus)
+        // Phase 4: in den Fahr-Screen (Video + Overlay-Shell). Erreichbar, sobald verbunden;
+        // die Kamera-View self-gated zusätzlich auf laufenden Stack (Contract §5).
+        Button(
+            onClick = onDrive,
+            enabled = connection.state == ConnState.CONNECTED,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Fahren →")
+        }
         HorizontalDivider()
         DebugSection(gamepadState, connection)
     }
@@ -71,7 +81,8 @@ private fun ConnectBar(
     onConnect: (String) -> Unit,
     onDisconnect: () -> Unit,
 ) {
-    var host by rememberSaveable { mutableStateOf("") }
+    // Host liegt in [ConnectionState] (hochgezogen), damit der Fahr-Screen die Video-URL ableiten
+    // kann. Bei Verbindungsabbruch bleibt der zuletzt eingegebene Host stehen (Wieder-Verbinden).
     Column(
         Modifier
             .fillMaxWidth()
@@ -93,8 +104,8 @@ private fun ConnectBar(
             // Beim Verbinden/Verbunden das Feld sperren (Host ändert sich nicht mitten drin).
             val busy = connection.state == ConnState.CONNECTED || connection.state == ConnState.CONNECTING
             OutlinedTextField(
-                value = host,
-                onValueChange = { host = it },
+                value = connection.host,
+                onValueChange = { connection.host = it },
                 label = { Text("Host") },
                 placeholder = { Text("Desktop-IP, z. B. 192.168.x.y") },
                 singleLine = true,
@@ -102,8 +113,8 @@ private fun ConnectBar(
                 modifier = Modifier.weight(1f)
             )
             Button(
-                onClick = { if (busy) onDisconnect() else onConnect(host.trim()) },
-                enabled = busy || host.isNotBlank()
+                onClick = { if (busy) onDisconnect() else onConnect(connection.host.trim()) },
+                enabled = busy || connection.host.isNotBlank()
             ) {
                 Text(if (busy) "Trennen" else "Verbinden")
             }

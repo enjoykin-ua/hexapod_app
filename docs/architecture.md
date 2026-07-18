@@ -137,14 +137,47 @@ GamepadState ─toControllerInput()─► ControllerInput ─JoyMapper─► Joy
 Pause/Screen-Lock → Schleife abgebrochen → `/joy` verstummt → `cmd_vel_timeout` hält den
 Roboter (NF1).
 
-### 4.3 Geplante Erweiterung (Richtung, keine Festlegung)
+### 4.3 Ist-Zustand (Phase 4 — Fahr-Screen-Shell + Video)
+
+Zweiter Screen (**Fahr-Screen**) + **Video-Kanal 2**. Navigation = **leichtgewichtige
+Compose-State-Navigation** (ein `Screen`-Enum, `BackHandler`) — **keine Nav-Bibliothek** (nur
+2 Screens). Der 30-Hz-`/joy`-Pfad läuft über den Screen-Wechsel **unverändert** weiter
+(Compose-State-Wechsel = kein `onPause`; Gamepad-Events werden ohnehin auf Activity-`dispatch*`-
+Ebene abgegriffen). Details + ADRs: [`phase_4_video_shell_plan.md`](phase_4_video_shell_plan.md).
+
+**Video (Kanal 2) = eigener OkHttp-MJPEG-Decoder** (nicht Media3/ExoPlayer — [ADR-1]): reuse des
+schon vorhandenen OkHttp, **keine neue Abhängigkeit**. `multipart/x-mixed-replace` wird selbst
+geparst → `Bitmap` → Compose (`ContentScale.Crop`).
+
+| Datei | Rolle |
+|---|---|
+| `VideoLogic.kt` | **reine** Helfer: `Screen`/`CenterView`-Enums, `videoStreamUrl(host)` (Port 8080, Contract §5), `toggleCam`, `shouldStream`, `extractBoundary` — unit-getestet |
+| `MjpegParser.kt` | **reiner** `parseMjpegStream(InputStream)`: Content-Length-Fast-Path + Boundary-Scan-Fallback + Split-Read-fest + Hint-Selbstkorrektur — unit-getestet (kein Android) |
+| `MjpegStream.kt` | OkHttp-GET (`readTimeout 0`) + `BitmapFactory` → auf Main gepostet; start/stop-Lifecycle + Fehlerbild/Auto-Retry (Glue, integrationsverifiziert) |
+| `VideoState.kt` | Compose-Snapshot-Halter (centerView, frame, streaming, error) |
+| `DriveScreen.kt` | Fahr-Screen: Center-View (Ebene 0) + Overlay-Slots §5 (Ebene 1) + leere config/alerts/show-Panels |
+| `MainActivity.kt` (erweitert) | Screen-State + `syncVideo()`-Gate (an `StackState.RUNNING` gekoppelt, Contract §5) + Betreten-Poll; hält `MjpegStream` |
+| `ConnectionState.kt` (erweitert) | `host` hochgezogen (Fahr-Screen leitet die Video-URL daraus ab) |
+
+**Datenfluss (Video-Pfad, Phase 4):**
+```
+web_video_server (host:8080, MJPEG) ─ws/http─► MjpegStream (OkHttp GET, BG-Thread)
+   └─ parseMjpegStream ─► JPEG-Bytes ─► BitmapFactory ─(Main)─► VideoState.frame
+                                                                    │ liest
+                                                                    ▼
+                                       DriveScreen · CenterPane (ContentScale.Crop, Vollbild)
+```
+Gate: Stream nur bei `verbunden && StackState.RUNNING && Fahr-Screen && Center=Kamera && Vordergrund`
+(`shouldStream`, rein). onPause/Back/Toggle-weg → `MjpegStream.stop()`.
+
+### 4.4 Geplante Erweiterung (Richtung, keine Festlegung)
 
 Wächst phasenweise; jede neue Schicht kommt **erst bei Bedarf** und über den Version-Catalog:
 
 | Ab Phase | Baustein (geplant) | Bibliothek |
 |---|---|---|
-| 3+ | Touch-Aktionen → Service-/Param-Calls; Status-Overlay | OkHttp |
-| 4 | Video-Vollbild (Kanal 2) | Media3/ExoPlayer |
+| 5 | Status-Overlay-Inhalte (state/stance/gait/tempo/foot/safety); Dropdowns; 3D-Viz; Config/Alerts/Show-Inhalte | OkHttp (Status-Topic/Params) |
+| Upgrade | Video-Latenz: RTSP/H.264 oder WebRTC (löst MJPEG ab) | **Media3/ExoPlayer** (dafür reserviert) |
 | 4+ | Verbindungs-/Foreground-Service (Netz-Lifecycle) | — |
 | 8 | Controller-Profil (JSON) statt fester Kishi-Abbildung [D8]; Auto-Reconnect | — |
 

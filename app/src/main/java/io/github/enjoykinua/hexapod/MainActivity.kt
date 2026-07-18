@@ -14,6 +14,9 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.lifecycleScope
 import io.github.enjoykinua.hexapod.ui.theme.Hexapod_appTheme
@@ -36,9 +39,17 @@ class MainActivity : ComponentActivity() {
     private val gamepadState = GamepadState()
     private val connection = ConnectionState()
     private val lifecycleState = LifecycleState()
+    private val videoState = VideoState()
     private lateinit var ros: RosbridgeClient
+    private lateinit var video: MjpegStream
     private var publishJob: Job? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+
+    // Phase 4: leichtgewichtige Compose-State-Navigation (Lifecycle <-> Drive). Als Activity-
+    // gehaltener Snapshot-State (wie die anderen Halter) -> Activity UND Compose lesen/schreiben.
+    private var screen by mutableStateOf(Screen.LIFECYCLE)
+    private var isResumed = false
+    private var videoRetries = 0
 
     private val deviceListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = refreshDevices()
@@ -70,8 +81,20 @@ class MainActivity : ComponentActivity() {
                     }
                     ConnState.CONNECTING -> {}
                 }
+                // Verbindungswechsel wirkt auch aufs Kamera-Gate (Stream nur bei verbunden).
+                syncVideo()
             }
         }
+        // Video-Stream-Client (Kanal 2, MJPEG). Callbacks kommen bereits auf Main (Handler in
+        // MjpegStream) -> hier direkt Compose-State schreiben. Kein ROS/rosbridge (getrennter Kanal).
+        video = MjpegStream(
+            onFrame = { bmp ->
+                videoState.frame = bmp
+                videoState.error = null
+                videoRetries = 0
+            },
+            onError = { msg -> onVideoError(msg) },
+        )
         // Bildschirm waehrend des Fahrens wach halten (Handy steckt im Kishi, Querformat ist im
         // Manifest gesperrt). Kein Immersive-/Kiosk-Modus -> Verlassen per System-Navigation
         // bleibt normal moeglich.
@@ -81,16 +104,28 @@ class MainActivity : ComponentActivity() {
         setContent {
             Hexapod_appTheme {
                 Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    ControlScreen(
-                        gamepadState = gamepadState,
-                        connection = connection,
-                        lifecycle = lifecycleState,
-                        onConnect = { host -> ros.connect(host) },
-                        onDisconnect = { lifecycleState.shuttingDown = false; ros.disconnect() },
-                        onAction = { action -> onLifecycleAction(action) },
-                        onRefreshStatus = { pollStatus() },
-                        modifier = Modifier.padding(innerPadding)
-                    )
+                    when (screen) {
+                        Screen.LIFECYCLE -> ControlScreen(
+                            gamepadState = gamepadState,
+                            connection = connection,
+                            lifecycle = lifecycleState,
+                            onConnect = { host -> ros.connect(host) },
+                            onDisconnect = { lifecycleState.shuttingDown = false; ros.disconnect() },
+                            onAction = { action -> onLifecycleAction(action) },
+                            onRefreshStatus = { pollStatus() },
+                            onDrive = { goToDrive() },
+                            modifier = Modifier.padding(innerPadding)
+                        )
+                        Screen.DRIVE -> DriveScreen(
+                            connection = connection,
+                            lifecycle = lifecycleState,
+                            video = videoState,
+                            onSetCenter = { cv -> videoState.centerView = cv; syncVideo() },
+                            onToggleCam = { videoState.centerView = toggleCam(videoState.centerView); syncVideo() },
+                            onBack = { screen = Screen.LIFECYCLE; syncVideo() },
+                            contentPadding = innerPadding,
+                        )
+                    }
                 }
             }
         }
@@ -100,10 +135,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        isResumed = true
         // Hot-Plug beobachten; Listener an den Lifecycle koppeln, sonst Leak.
         inputManager.registerInputDeviceListener(deviceListener, mainHandler)
         refreshDevices()
         startPublishing()
+        syncVideo()   // im Vordergrund ggf. Stream (wieder) starten (Gate entscheidet)
     }
 
     /**
@@ -138,7 +175,58 @@ class MainActivity : ComponentActivity() {
                     lifecycleState.stack = StackState.UNKNOWN
                     lifecycleState.statusMessage = null
                 }
+                // frischer Stack-Status -> Kamera-Gate nachziehen (startet/stoppt den Stream)
+                syncVideo()
             }
+        }
+    }
+
+    // --- Phase 4: Navigation + Video-Stream-Orchestrierung ---
+
+    /** In den Fahr-Screen wechseln + **Betreten-Poll** (frischer Stack-Status fürs Kamera-Gate). */
+    private fun goToDrive() {
+        screen = Screen.DRIVE
+        pollStatus()   // Betreten-Poll (User-Entscheidung): Gate mit frischem Status öffnen
+        syncVideo()
+    }
+
+    /**
+     * Kamera-Stream an-/abschalten gemäß Gate (rein: [shouldStream]), idempotent über
+     * [VideoState.streaming]. Aufgerufen bei jeder Änderung von screen/centerView/Verbindung/Stack
+     * + in onResume/onPause. Contract §5: Stream erst bei laufendem Stack (Port 8080).
+     */
+    private fun syncVideo() {
+        val want = shouldStream(
+            screen = screen,
+            centerView = videoState.centerView,
+            connected = connection.state == ConnState.CONNECTED,
+            stackRunning = lifecycleState.stack == StackState.RUNNING,
+            resumed = isResumed,
+        )
+        if (want && !videoState.streaming) {
+            videoRetries = 0
+            videoState.error = null
+            videoState.streaming = true
+            video.start(videoStreamUrl(connection.host))
+        } else if (!want && videoState.streaming) {
+            videoState.streaming = false
+            videoState.frame = null
+            video.stop()
+        }
+    }
+
+    /**
+     * Stream-Fehler (Connection-refused/Read): Hinweis zeigen, Stream als gestoppt markieren (kein
+     * Crash). Begrenzter Auto-Retry — Port 8080 kann dem gepollten Status minimal hinterherhinken.
+     */
+    private fun onVideoError(msg: String) {
+        videoState.error = msg
+        videoState.frame = null
+        video.stop()
+        videoState.streaming = false
+        if (videoRetries < VIDEO_MAX_RETRIES) {
+            videoRetries++
+            mainHandler.postDelayed({ syncVideo() }, VIDEO_RETRY_DELAY_MS)
         }
     }
 
@@ -164,14 +252,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         super.onPause()
+        isResumed = false
         inputManager.unregisterInputDeviceListener(deviceListener)
         publishJob?.cancel()
         publishJob = null
+        // isResumed=false -> Gate schliesst -> Stream stoppen (kein Video/Bandbreite im Hintergrund).
+        syncVideo()
     }
 
     override fun onDestroy() {
         super.onDestroy()
         ros.dispose()
+        video.stop()
     }
 
     /** Erstes Geraet mit Gamepad-/Joystick-Source suchen und Achsenliste vorbelegen. */
@@ -236,5 +328,7 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val PUBLISH_PERIOD_MS = 33L   // ~30 Hz (NF1: stetig, auch bei neutral)
+        private const val VIDEO_MAX_RETRIES = 3     // Stream-Auto-Retry (Port 8080 vs. Status-Latenz)
+        private const val VIDEO_RETRY_DELAY_MS = 1_500L
     }
 }
