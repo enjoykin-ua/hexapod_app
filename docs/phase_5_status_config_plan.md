@@ -256,10 +256,10 @@ Voll-3D-Meshes (nicht geplant).
 
 ```
 Phase 5 App (P5.10–P5.13):
-- [ ] P5.10a [Transport] RosbridgeClient: subscribe/unsubscribe + publish-Routing; call_service mit Args + rohe values (ADR-P5-1)
-- [ ] P5.10b [Transport] RosbridgeProtocol: subscribe-Frames (latched-QoS §7.4), get/set_parameters, SetBool, Parser (status/tempo/caps/manifest/alerts/foot/joint_states)
-- [ ] P5.10c [Overlay] HmiState-Halter + Slots gefüllt (state/stance/gait/tempo/safety/tip) + Foot-Raster grün; Merge status+tempo; Platzhalter wenn leer
-- [ ] P5.10  [Checkpoint] testDebugUnitTest grün + Self-Review; User-Sicht
+- [x] P5.10a [Transport] RosbridgeClient: subscribe/unsubscribe + publish-Routing; callServiceArgs + rohe RawResponse (ADR-P5-1) ✅
+- [x] P5.10b [Transport] RosbridgeProtocol: subscribe-Frames (latched-QoS §7.4), callServiceArgs, parsePublish/parseRawResponse; HmiProtocol-Parser status/tempo/foot ✅ (get/set_parameters+SetBool+caps/manifest/alerts/joints → mit ihrer Stufe, s. Abweichung ↓)
+- [x] P5.10c [Overlay] HmiState-Halter + Slots gefüllt (state/stance/gait/tempo/safety/tip) + Foot-Raster grün; Merge status+tempo; Platzhalter wenn leer; Stale-Clear bei Stack-Stopp ✅
+- [x] P5.10  [Checkpoint] testDebugUnitTest 47/0 grün + assembleDebug ok + Self-Review; **User-Sicht offen**
 - [ ] P5.11a [Config] Manifest-Parse + generisches Panel (Gruppen, Slider ±/Eintipp, Toggle, Dropdown), advanced eingeklappt; Slot-Text „⚙ config"
 - [ ] P5.11b [Config] get/set_parameters-Glue; Gating + Dynamic-Cap + Reject-reason; Tempo↔Scales-Reload
 - [ ] P5.11  [Checkpoint] ConfigLogicTest grün + Self-Review; User-Sicht
@@ -313,9 +313,15 @@ sichtbar · Dropdowns gait/tempo/stance funktionieren · Alerts-Liste + Kopieren
 `HmiModels.kt` (Datenklassen + Enums) · `ConfigLogic.kt` · `CycleLogic.kt` · `FootLogic.kt` ·
 `AlertLogic.kt` · `Robot3dLogic.kt`
 
-**Neu — State + UI (Glue/Compose, integrationsverifiziert):**
-`HmiState.kt` (Compose-Snapshot-Halter) · `ConfigPanel.kt` · `AlertsPanel.kt` · `Robot3dView.kt` ·
-Dropdown-Composables (in `DriveScreen.kt` oder eigene Datei)
+**Neu — Glue (org.json/Compose, integrationsverifiziert):**
+`HmiProtocol.kt` (Topic-Parser, org.json) · `HmiState.kt` (Compose-Snapshot-Halter) · `ConfigPanel.kt` ·
+`AlertsPanel.kt` · `Robot3dView.kt` · Dropdown-Composables (in `DriveScreen.kt` oder eigene Datei)
+
+> **Umsetzungsnotizen P5.10 (bewusste Abweichungen vom Plan):** (1) Die Topic-Parser liegen in einer
+> **eigenen** `HmiProtocol.kt` statt in `RosbridgeProtocol.kt` (Kohäsion: /joy+generischer Transport
+> vs. Phase-5-HMI-Parsen). (2) Parser werden **inkrementell mit ihrer Stufe** gebaut (P5.10: status/
+> tempo/foot; caps/manifest/alerts/joints folgen P5.11–P5.13) statt alle vorab — vermeidet spekulativen
+> toten Code. Der **Transport** (subscribe/route/callServiceArgs) ist bereits vollständig.
 
 **Neu — Tests:** `ConfigLogicTest.kt` · `CycleLogicTest.kt` · `FootLogicTest.kt` ·
 `AlertLogicTest.kt` · `Robot3dLogicTest.kt`

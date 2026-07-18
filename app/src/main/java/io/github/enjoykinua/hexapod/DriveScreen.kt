@@ -50,6 +50,7 @@ fun DriveScreen(
     connection: ConnectionState,
     lifecycle: LifecycleState,
     video: VideoState,
+    hmi: HmiState,
     onSetCenter: (CenterView) -> Unit,
     onToggleCam: () -> Unit,
     onBack: () -> Unit,
@@ -72,8 +73,8 @@ fun DriveScreen(
             Modifier.fillMaxSize().padding(contentPadding).padding(8.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            TopBar(connection, lifecycle, video.centerView, onBack, onSetCenter) { openPanel = it }
-            BottomBar(video.centerView == CenterView.KAMERA, onToggleCam)
+            TopBar(connection, lifecycle, hmi.status, video.centerView, onBack, onSetCenter) { openPanel = it }
+            BottomBar(hmi, video.centerView == CenterView.KAMERA, onToggleCam)
         }
 
         // --- Overlay-Panels (config/alerts/show) — leer, Phase-5-Platzhalter ---
@@ -118,6 +119,7 @@ private fun CenterHint(text: String) {
 private fun TopBar(
     connection: ConnectionState,
     lifecycle: LifecycleState,
+    status: StatusSnapshot?,
     centerView: CenterView,
     onBack: () -> Unit,
     onSetCenter: (CenterView) -> Unit,
@@ -131,8 +133,8 @@ private fun TopBar(
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             SlotButton("‹ zurück", onClick = onBack)
             ConnSlot(connection, lifecycle)
-            OverlaySlot("safety")
-            OverlaySlot("tip")
+            SafetySlot(status)
+            TipSlot(status)
         }
         CenterToggle(centerView, onSetCenter)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -193,19 +195,20 @@ private fun SegItem(label: String, selected: Boolean, enabled: Boolean, onClick:
 // --- Ebene 1: Bottom-Leiste ---
 
 @Composable
-private fun BottomBar(camOn: Boolean, onToggleCam: () -> Unit) {
+private fun BottomBar(hmi: HmiState, camOn: Boolean, onToggleCam: () -> Unit) {
+    val status = hmi.status
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Bottom,
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Bottom) {
-            FootGrid()
+            FootGrid(hmi.footContacts)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                OverlaySlot("state")
-                OverlaySlot("stance")
-                OverlaySlot("gait")
-                OverlaySlot("tempo")
+                ValueSlot("state", status?.state.orNull())
+                ValueSlot("stance", status?.stance.orNull())
+                ValueSlot("gait", status?.gait.orNull())
+                ValueSlot("tempo", hmi.tempo?.tempo.orNull())
             }
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -215,23 +218,30 @@ private fun BottomBar(camOn: Boolean, onToggleCam: () -> Unit) {
     }
 }
 
-/** Fuß-Kontakt-Raster 2×3 „1 4 / 2 5 / 3 6" — in Phase 4 leer (grau); Grün-Logik = Phase 5. */
+/**
+ * Fuß-Kontakt-Raster 2×3 „1 4 / 2 5 / 3 6" (Phase 5): grün = Bodenkontakt, grau = kein Kontakt /
+ * noch keine Daten. [contacts] hat genau [FOOT_COUNT] Einträge oder ist leer (Platzhalter grau).
+ * Index→Position: 0→„1" 1→„2" 2→„3" 3→„4" 4→„5" 5→„6" (Bein-Zuordnung beim Live-Test verifiziert).
+ */
 @Composable
-private fun FootGrid() {
+private fun FootGrid(contacts: List<Boolean>) {
+    fun c(i: Int): Boolean? = contacts.getOrNull(i)
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("1"); FootChip("4") }
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("2"); FootChip("5") }
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("3"); FootChip("6") }
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("1", c(0)); FootChip("4", c(3)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("2", c(1)); FootChip("5", c(4)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("3", c(2)); FootChip("6", c(5)) }
     }
 }
 
 @Composable
-private fun FootChip(n: String) {
+private fun FootChip(n: String, contact: Boolean?) {
+    val bg = if (contact == true) FOOT_CONTACT_GREEN else SCRIM
+    val fg = if (contact == true) Color.White else LABEL_GREY
     Box(
-        Modifier.size(22.dp).clip(RoundedCornerShape(4.dp)).background(SCRIM),
+        Modifier.size(22.dp).clip(RoundedCornerShape(4.dp)).background(bg),
         contentAlignment = Alignment.Center,
     ) {
-        Text(n, color = Color(0xFF999999), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+        Text(n, color = fg, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -264,9 +274,61 @@ private fun CamToggle(on: Boolean, onClick: () -> Unit) {
 // --- gemeinsame Slot-Bausteine ---
 
 private val SCRIM = Color(0x88000000)
+private val FOOT_CONTACT_GREEN = Color(0xFF2E7D32)
+private val PLACEHOLDER = Color(0xFF777777)
+private val LABEL_GREY = Color(0xFF999999)
 
+/** Leerer String → `null`, damit der Wert-Slot den Platzhalter „—" zeigt. */
+private fun String?.orNull(): String? = this?.takeIf { it.isNotEmpty() }
+
+/**
+ * Wert-Slot „label wert" (Phase 5). [value]=`null` → Platzhalter „—" (grau); [valueColor] färbt den
+ * Wert (z. B. safety/tip). Der Label-Teil bleibt dezent grau.
+ */
 @Composable
-private fun OverlaySlot(label: String) = Slot(text = label, textColor = Color(0xFFAAAAAA))
+private fun ValueSlot(label: String, value: String?, valueColor: Color = Color.White) {
+    Box(
+        Modifier.clip(RoundedCornerShape(6.dp)).background(SCRIM).padding(horizontal = 8.dp, vertical = 4.dp),
+    ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(label, color = LABEL_GREY, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+            Text(
+                value ?: "—",
+                color = if (value == null) PLACEHOLDER else valueColor,
+                fontFamily = FontFamily.Monospace,
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+    }
+}
+
+/** safety-Slot: FROZEN (rot) / ok (grün) / Platzhalter (kein Status). */
+@Composable
+private fun SafetySlot(status: StatusSnapshot?) {
+    val frozen = status?.safetyFrozen == true
+    ValueSlot(
+        label = "safety",
+        value = when {
+            status == null -> null
+            frozen -> "FROZEN"
+            else -> "ok"
+        },
+        valueColor = if (frozen) Color(0xFFEE5555) else Color(0xFF7CFC9A),
+    )
+}
+
+/** tip-Slot: none (grün) / warn (gelb) / crit (rot) / Platzhalter (kein Status). */
+@Composable
+private fun TipSlot(status: StatusSnapshot?) {
+    val tip = status?.tip
+    val color = when (tip) {
+        "crit" -> Color(0xFFEE5555)
+        "warn" -> Color(0xFFEEDD55)
+        "none" -> Color(0xFF7CFC9A)
+        else -> PLACEHOLDER
+    }
+    ValueSlot("tip", tip.orNull(), valueColor = color)
+}
 
 @Composable
 private fun Slot(text: String, textColor: Color) {

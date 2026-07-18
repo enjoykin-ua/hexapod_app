@@ -43,40 +43,96 @@ fun rosbridgePublishJoy(joy: JoyMessage): String {
         .toString()
 }
 
-// --- Phase 3: Service-Calls (rosbridge `call_service` / `service_response`) ---
+// --- Phase 3/5: Service-Calls + Subscriptions (rosbridge call_service / subscribe / publish) ---
 // Wie der /joy-Envelope org.json-basiert → integrationsverifiziert, NICHT unit-getestet. Die
-// *Interpretation* der Rohdaten (StackState, Button-FSM) liegt rein in [LifecycleLogic].
+// *Interpretation* der Rohdaten liegt rein in [LifecycleLogic]/[HmiProtocol]/[FootLogic].
 
 /**
- * Ergebnis eines `call_service`. [ok] = rosbridge-`result` **und** Trigger-`success`;
- * [message] = Trigger-`message` bzw. Fehlertext bei `!ok` (Timeout / nicht verbunden / rosbridge-
- * Fehler).
+ * Ergebnis eines std_srvs/Trigger- (oder SetBool-) `call_service`. [ok] = rosbridge-`result`
+ * **und** `success`; [message] = `message` bzw. Fehlertext bei `!ok` (Timeout / nicht verbunden /
+ * rosbridge-Fehler).
  */
 data class ServiceResult(val ok: Boolean, val message: String)
 
-/** Roh aus einem `service_response`-Frame gezogen (std_srvs/Trigger-Form: success + message). */
-data class RawServiceResponse(
+/**
+ * Generische `service_response`-Rohantwort (Phase 5, id-korreliert): [result] = rosbridge-Erfolg des
+ * Calls, [values] = das `values`-Objekt (get/set_parameters lesen daraus selbst; `null` bei
+ * rosbridge-Fehler oder synthetischem Fehler), [error] = Fehlertext bei `!result`.
+ */
+data class RawResponse(
     val id: String,
     val result: Boolean,
-    val success: Boolean,
-    val message: String,
+    val values: JSONObject?,
+    val error: String,
 )
 
-/** `call_service`-Frame; `args={}` = leerer std_srvs/Trigger-Request. */
-fun rosbridgeCallService(id: String, service: String): String = JSONObject()
+/** Trigger-/SetBool-Sicht (success + message) auf eine generische [RawResponse]. */
+fun RawResponse.asTriggerResult(): ServiceResult {
+    val success = values?.optBoolean("success", false) ?: false
+    val message = values?.optString("message", "")?.takeUnless { it.isEmpty() } ?: error
+    return ServiceResult(ok = result && success, message = message)
+}
+
+/** `call_service`-Frame mit beliebigen [args] (Phase 5: get/set_parameters, SetBool). */
+fun rosbridgeCallServiceArgs(id: String, service: String, args: JSONObject): String = JSONObject()
     .put("op", "call_service")
     .put("id", id)
     .put("service", service)
-    .put("args", JSONObject())
+    .put("args", args)
     .toString()
 
 /**
- * Zieht einen `service_response`-Frame roh heraus; `null`, wenn es keiner ist (andere rosbridge-
- * Frames) oder die `id` fehlt. Defensiv: fehlende Felder → false/"". Fehlerfall (rosbridge
- * `result=false`): `values` ist dann ein Fehlertext-**String** statt eines Objekts → als
- * `message` übernommen.
+ * `subscribe`-Frame. [latched]=true → explizites `transient_local`+`reliable`-QoS (Contract §7.4),
+ * damit der gelatchte Wert beim (späten) Subscribe ankommt; [depth] = Queue-Tiefe (Alerts: 50).
+ * [latched]=false → rosbridge-Default-QoS (nicht-latched: status/foot_contacts/joint_states).
  */
-fun parseServiceResponse(text: String): RawServiceResponse? {
+fun rosbridgeSubscribe(topic: String, type: String, latched: Boolean, depth: Int = 1): String {
+    val frame = JSONObject()
+        .put("op", "subscribe")
+        .put("topic", topic)
+        .put("type", type)
+    if (latched) {
+        frame.put(
+            "qos",
+            JSONObject()
+                .put("history", "keep_last")
+                .put("depth", depth)
+                .put("durability", "transient_local")
+                .put("reliability", "reliable"),
+        )
+    }
+    return frame.toString()
+}
+
+/** `unsubscribe`-Frame. */
+fun rosbridgeUnsubscribe(topic: String): String = JSONObject()
+    .put("op", "unsubscribe")
+    .put("topic", topic)
+    .toString()
+
+/**
+ * Zieht `(topic, msg)` aus einem `publish`-Frame; `null`, wenn es keiner ist. Der [HmiProtocol]-
+ * Parser des jeweiligen Topics interpretiert das `msg`-Objekt weiter.
+ */
+fun parsePublish(text: String): Pair<String, JSONObject>? {
+    val obj = try {
+        JSONObject(text)
+    } catch (e: JSONException) {
+        return null
+    }
+    if (obj.optString("op") != "publish") return null
+    val topic = obj.optString("topic")
+    if (topic.isEmpty()) return null
+    val msg = obj.optJSONObject("msg") ?: return null
+    return topic to msg
+}
+
+/**
+ * Zieht einen `service_response`-Frame roh heraus; `null`, wenn es keiner ist (andere Frames) oder
+ * die `id` fehlt. Defensiv: bei rosbridge-Fehler (`result=false`) ist `values` oft ein Fehlertext-
+ * **String** statt eines Objekts → als [RawResponse.error] übernommen.
+ */
+fun parseRawResponse(text: String): RawResponse? {
     val obj = try {
         JSONObject(text)
     } catch (e: JSONException) {
@@ -86,11 +142,11 @@ fun parseServiceResponse(text: String): RawServiceResponse? {
     val id = obj.optString("id")
     if (id.isEmpty()) return null
     val values = obj.optJSONObject("values")
-    val message = if (values != null) values.optString("message", "") else obj.optString("values", "")
-    return RawServiceResponse(
+    val error = if (values == null) obj.optString("values", "") else ""
+    return RawResponse(
         id = id,
         result = obj.optBoolean("result", false),
-        success = values?.optBoolean("success", false) ?: false,
-        message = message,
+        values = values,
+        error = error,
     )
 }

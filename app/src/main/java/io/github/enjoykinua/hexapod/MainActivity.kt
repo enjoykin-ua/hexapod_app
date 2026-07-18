@@ -40,6 +40,7 @@ class MainActivity : ComponentActivity() {
     private val connection = ConnectionState()
     private val lifecycleState = LifecycleState()
     private val videoState = VideoState()
+    private val hmi = HmiState()
     private lateinit var ros: RosbridgeClient
     private lateinit var video: MjpegStream
     private var publishJob: Job? = null
@@ -67,17 +68,19 @@ class MainActivity : ComponentActivity() {
                 connection.state = state
                 connection.error = err
                 when (state) {
-                    // frisch verbunden → Stack-Status holen (Option A: Polling)
+                    // frisch verbunden → Stack-Status holen (Option A: Polling) + HMI-Topics subscriben
                     ConnState.CONNECTED -> {
                         lifecycleState.shuttingDown = false
                         lifecycleState.notice = null
                         pollStatus()
+                        subscribeHmi()
                     }
-                    // getrennt/Fehler → Lifecycle-Zustand invalidieren, laufende Aktion lösen
+                    // getrennt/Fehler → Lifecycle- + HMI-Zustand invalidieren, laufende Aktion lösen
                     ConnState.DISCONNECTED, ConnState.ERROR -> {
                         lifecycleState.stack = StackState.UNKNOWN
                         lifecycleState.statusMessage = null
                         lifecycleState.pendingAction = null
+                        hmi.clear()
                     }
                     ConnState.CONNECTING -> {}
                 }
@@ -120,6 +123,7 @@ class MainActivity : ComponentActivity() {
                             connection = connection,
                             lifecycle = lifecycleState,
                             video = videoState,
+                            hmi = hmi,
                             onSetCenter = { cv -> videoState.centerView = cv; syncVideo() },
                             onToggleCam = { videoState.centerView = toggleCam(videoState.centerView); syncVideo() },
                             onBack = { screen = Screen.LIFECYCLE; syncVideo() },
@@ -175,9 +179,32 @@ class MainActivity : ComponentActivity() {
                     lifecycleState.stack = StackState.UNKNOWN
                     lifecycleState.statusMessage = null
                 }
+                // Stack nicht (mehr) aktiv -> stack-gebundene Overlay-Daten invalidieren (kein Stale)
+                if (lifecycleState.stack != StackState.RUNNING) hmi.clearStackData()
                 // frischer Stack-Status -> Kamera-Gate nachziehen (startet/stoppt den Stream)
                 syncVideo()
             }
+        }
+    }
+
+    // --- Phase 5: HMI-Live-Topics (Overlay) subscriben; Handler → HmiState (auf Main) ---
+
+    /**
+     * Die Overlay-Live-Topics subscriben (nach CONNECTED). Die Handler feuern vom OkHttp-Thread →
+     * org.json-Parsen dort, dann auf Main marshallen, bevor Compose-State geschrieben wird (wie bei
+     * [onState]). `status`/`tempo` liefern erst nach `bringup_start`; die Handler feuern dann.
+     * Ungültige/leere Frames → letzten guten Wert behalten (kein Wipe).
+     */
+    private fun subscribeHmi() {
+        ros.subscribe("/hexapod/status", "std_msgs/msg/String", latched = false) { msg ->
+            parseStatus(msg)?.let { s -> mainHandler.post { hmi.status = s } }
+        }
+        ros.subscribe("/hexapod/tempo", "std_msgs/msg/String", latched = true) { msg ->
+            parseTempo(msg)?.let { t -> mainHandler.post { hmi.tempo = t } }
+        }
+        ros.subscribe("/foot_contacts", "std_msgs/msg/Float64MultiArray", latched = false) { msg ->
+            val raw = parseFootContactsRaw(msg)
+            if (raw.isNotEmpty()) mainHandler.post { hmi.footContacts = footContacts(raw) }
         }
     }
 
