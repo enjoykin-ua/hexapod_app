@@ -170,6 +170,43 @@ web_video_server (host:8080, MJPEG) ─ws/http─► MjpegStream (OkHttp GET, BG
 Gate: Stream nur bei `verbunden && StackState.RUNNING && Fahr-Screen && Center=Kamera && Vordergrund`
 (`shouldStream`, rein). onPause/Back/Toggle-weg → `MjpegStream.stop()`.
 
+### 4.5 Ist-Zustand (Phase 5 — Status-Overlay + Config-Panel + Dropdowns + 3D-Viz)
+
+Die Phase-4-Shell wird mit **Live-Daten** gefüllt. Kern: der `RosbridgeClient` wird um **Subscribe +
+`publish`-Routing** und **generisches `call_service` mit Args** erweitert (der Phase-2/3-`/joy`-/
+Trigger-Pfad bleibt unverändert). Interface = `interface_contract.md` **v0.9.1 §6a** (5 JSON-Topics +
+Config-Manifest + native Param-Services + Set-Stance/Set-Tempo). Details/ADRs:
+[`phase_5_status_config_plan.md`](phase_5_status_config_plan.md).
+
+**Schichtung wie gehabt:** reine, unit-getestete Logik getrennt vom org.json-/Compose-Glue.
+
+| Datei | Rolle |
+|---|---|
+| `HmiModels.kt` | reine Datenmodelle (Status/Tempo/Capabilities/ParamSpec/ConfigManifest/Alert/…) |
+| `ConfigLogic.kt` · `CycleLogic.kt` · `FootLogic.kt` · `AlertLogic.kt` · `Robot3dLogic.kt` | **reine** Logik (Gating/Cap/Step/Validierung; cycle-to-target-Schritt; Foot; Alerts; FK+Projektion) — unit-getestet |
+| `HmiProtocol.kt` | org.json-Parser der Topics + Param-Service-Kodierung (get/set_parameters, SetBool) — Glue |
+| `HmiState.kt` | Compose-Snapshot-Halter aller HMI-Live-Daten |
+| `RosbridgeProtocol.kt` (erw.) | + subscribe-Frames (latched-QoS §7.4), `callServiceArgs`, generische `RawResponse`, `parsePublish` |
+| `RosbridgeClient.kt` (erw.) | + `subscribe`/`unsubscribe` + `publish`-Routing an Topic-Handler; `callServiceArgs` |
+| `ConfigPanel.kt` · `AlertsPanel.kt` · `Robot3dView.kt` | Compose-UI (generisches Panel; Alerts-Liste; 3D-Canvas) |
+| `DriveScreen.kt` (erw.) | Overlay-Slots live; antippbare Dropdown-Slots; Panels gefüllt; 3D-Center aktiv |
+| `MainActivity.kt` (erw.) | Subscribe bei Connect; get/set-Params; cycle-to-target-Orchestrierung; joint_states-Gate |
+
+**Datenfluss (HMI, Phase 5):**
+```
+rosbridge (host:9090) ──subscribe/publish──► RosbridgeClient.topicHandlers
+   status/tempo/foot/capabilities/manifest/alerts/joint_states
+        └─ HmiProtocol.parse* ─(OkHttp-Thread)─► (Main) HmiState  ◄─── DriveScreen/ConfigPanel/… liest
+   Touch → onSetParam/onSet*/startCycle → callServiceArgs(get/set_parameters | SetBool)
+```
+- **Overlay:** `status` + `tempo` gemergt; `/foot_contacts` → grünes Raster.
+- **Config-Panel:** generisch aus `config_manifest`; Werte via native `get/set_parameters`; Gating/
+  Dynamic-Cap/Reject-`reason` (Contract §6a).
+- **Dropdowns:** antippbare Slots aus `capabilities`; gait = `set_parameters(gait_pattern)`, stance/
+  tempo = cycle-to-target (`/hexapod_cycle_stance`/`_tempo`), standing-gated.
+- **3D-Viz:** zero-dep FK+Iso-Projektion aus `/joint_states` (Geometrie statisch aus
+  `hexapod_description`); `/joint_states` nur abonniert, solange die 3D-Ansicht aktiv ist.
+
 ### 4.4 Geplante Erweiterung (Richtung, keine Festlegung)
 
 Wächst phasenweise; jede neue Schicht kommt **erst bei Bedarf** und über den Version-Catalog:

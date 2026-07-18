@@ -178,6 +178,7 @@ Sticks/Tasten fahren den Roboter, der Handy-Screen zeigt Video-Vollbild + Overla
 | `docs/phase_2_joy_client_plan.md` | Phase-2-App-Plan: `/joy`-WebSocket-Client (Logik/ADRs, Tests, Done-Vertrag) |
 | `docs/phase_3_lifecycle_plan.md` | Phase-3-App-Plan: Connect-/Lifecycle-Screen (`call_service`, Option A/B, ADRs, Tests, Done-Vertrag) |
 | `docs/phase_4_video_shell_plan.md` | Phase-4-App-Plan: Fahr-Screen-Shell + Vollbild-Video (eigener OkHttp-MJPEG-Decoder, Center-Toggle, Slot-Vertrag §5, ADRs, Tests, Done-Vertrag) |
+| `docs/phase_5_status_config_plan.md` | Phase-5-App-Plan: Overlay-Live-Daten + generisches Config-Panel + Dropdowns + Alerts + 3D-Viz (ADRs, Tests, Done-Vertrag) |
 
 **Roboter-Seite (read-only, `~/hexapod_ws/project_finalization/app_control_requirements/`):**
 `00_overview.md` · `requirements.md` · `decisions.md` · **`interface_contract.md` (Interface, SoT)** ·
@@ -189,8 +190,9 @@ Sticks/Tasten fahren den Roboter, der Handy-Screen zeigt Video-Vollbild + Overla
 > **nicht im Chat** (D9/D10: Kopplung über den versionierten Contract/Plan, nicht mündlich).
 > Phase 1 (Hello-World) war app-lokal (`docs/phase_1_stage_b_brief.md`); **ab Phase 2** =
 > hexapod_ws-Phasenplan.
-> **Aktuell: Phase 4** — Video-Vollbild + UI-Shell (Fahr-Screen). Brief:
-> `~/hexapod_ws/project_finalization/app_control_requirements/phase_4_video_shell_plan.md` §5
-> + Interface `interface_contract.md` v0.7 (§5 Video/MJPEG :8080 `/camera/image_raw`, §0 Adressierung).
-> Phase 4 = Shell + Video + **leere positionierte Overlay-Slots** (Slot-Vertrag für Phase 5).
-> (Phase 3 Lifecycle-Screen = erledigt; Phase 2 `/joy`-Client = erledigt.)
+> **Aktuell: Phase 5** — Status-Overlay + Config-Panel + Dropdowns + 3D-Viz. App-Code fertig & grün
+> (P5.10–P5.14, `testDebugUnitTest` 77/0); **offen: T5.15** (Live-Integration mit User). Plan:
+> `docs/phase_5_status_config_plan.md` + Interface `interface_contract.md` **v0.9.1 §6a** (5 JSON-Topics
+> + Config-Manifest + native Param-Services + Set-Stance/Set-Tempo). Der `RosbridgeClient` kann jetzt
+> subscribe + `call_service` mit Args (der `/joy`-/Trigger-Pfad bleibt unverändert).
+> (Phase 4 Video/Shell = erledigt; Phase 3 Lifecycle + Phase 2 `/joy`-Client = erledigt.)

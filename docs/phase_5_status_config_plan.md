@@ -263,12 +263,12 @@ Phase 5 App (P5.10–P5.13):
 - [x] P5.11a [Config] Manifest-Parse + generisches Panel (Gruppen, Slider ±/Eintipp/Drag, Toggle, Dropdown), advanced eingeklappt + Warnung; Slot-Text „⚙ config" ✅
 - [x] P5.11b [Config] get/set_parameters-Glue; Gating + Dynamic-Cap + Reject-reason; Tempo↔Scales-Reload; Slider-Revert bei Reject ✅
 - [x] P5.11  [Checkpoint] ConfigLogicTest 18 grün (Summe 65/0) + assembleDebug ok + Self-Review; **User-Sicht offen**
-- [ ] P5.12a [Dropdowns] antippbare Slots stance/gait/tempo -> Popup (capabilities); gait (set_parameters) + stance/tempo (cycle-to-target, ein Controller), standing-gated
-- [ ] P5.12b [Alerts] Alerts-Liste (Level-Farbe) + „Alles kopieren" + lokaler „Löschen"-Button; Reset+Dedup beim Subscribe
-- [ ] P5.12  [Checkpoint] CycleLogicTest/AlertLogicTest grün + Self-Review; User-Sicht
-- [ ] P5.13  [3D-Viz] ROBOT3D aktiviert: FK+Projektion (Canvas) aus /joint_states; Robot3dLogicTest grün; Self-Review
-- [ ] P5.14  [Doku] architecture.md §4.5 + NEXT.md + CLAUDE.md „Aktuell: Phase 5" nachziehen
-- [ ] T5.15  [Integration, User+App] End-to-End gegen die laufende ROS-Seite (Done-Kriterium)
+- [x] P5.12a [Dropdowns] antippbare Slots stance/gait/tempo -> Popup (capabilities); gait (set_parameters) + stance/tempo (cycle-to-target, ein Controller), standing-gated, „…"-Indikator ✅
+- [x] P5.12b [Alerts] Alerts-Liste (Level-Farbe) + „Alles kopieren" + lokaler „Löschen"-Button; Reset bei Disconnect + Dedup ✅
+- [x] P5.12  [Checkpoint] CycleLogicTest 3 + AlertLogicTest 4 grün (Summe 72/0) + assembleDebug ok + Self-Review; **User-Sicht offen**
+- [x] P5.13  [3D-Viz] ROBOT3D aktiviert: FK+Projektion (Canvas) aus /joint_states (gated subscribe); Robot3dLogicTest 5 grün (Summe 77/0); Self-Review ✅
+- [x] P5.14  [Doku] architecture.md §4.5 + NEXT.md + CLAUDE.md „Aktuell: Phase 5" nachgezogen ✅
+- [ ] T5.15  [Integration, User+App] End-to-End gegen die laufende ROS-Seite (Done-Kriterium) — **offen (Live-Test mit User)**
 ```
 
 **Integration T5.15 (Done-Kriterium, mit User):** Overlay zeigt Live-State/Stance/Gangart/Tempo/

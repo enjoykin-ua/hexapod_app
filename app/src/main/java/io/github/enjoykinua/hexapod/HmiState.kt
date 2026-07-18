@@ -32,6 +32,19 @@ class HmiState {
     /** Letzter Reject-`reason` je Param (Key `node|param`) — Contract §6a Pflicht 3. */
     var paramErrors by mutableStateOf<Map<String, String>>(emptyMap())
 
+    /** Dropdown-Enums aus `/hexapod/capabilities` (Always-On, latched; `null` = noch keine). */
+    var capabilities by mutableStateOf<Capabilities?>(null)
+
+    /** Alert-Historie aus `/hexapod/alerts` (neueste oben, Cap [ALERTS_CAP]). */
+    var alerts by mutableStateOf<List<Alert>>(emptyList())
+
+    /** Läuft gerade ein Stance- bzw. Tempo-cycle-to-target? (Overlay zeigt „…"). */
+    var cyclingStance by mutableStateOf(false)
+    var cyclingTempo by mutableStateOf(false)
+
+    /** Joint-Winkel [rad] aus `/joint_states` (3D-Viz; nur abonniert während die 3D-Ansicht aktiv ist). */
+    var jointPositions by mutableStateOf<Map<String, Double>>(emptyMap())
+
     /**
      * Stack-gebundene Live-Daten invalidieren — status/tempo/foot **und** die Param-Werte/-Fehler
      * (aus den Stack-Nodes), z. B. wenn der Stack stoppt. Das **Manifest** (Always-On) bleibt →
@@ -43,11 +56,16 @@ class HmiState {
         footContacts = emptyList()
         paramValues = emptyMap()
         paramErrors = emptyMap()
+        cyclingStance = false
+        cyclingTempo = false
+        jointPositions = emptyMap()
     }
 
-    /** Bei Verbindungsabbruch: alle Live-Daten invalidieren (inkl. Always-On-Manifest). */
+    /** Bei Verbindungsabbruch: alle Live-Daten invalidieren (inkl. Always-On-Manifest/Capabilities/Alerts). */
     fun clear() {
         clearStackData()
         manifest = null
+        capabilities = null
+        alerts = emptyList()
     }
 }

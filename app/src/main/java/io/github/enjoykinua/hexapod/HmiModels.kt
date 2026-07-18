@@ -105,3 +105,23 @@ data class ConfigManifest(
 
 /** Ergebnis eines `set_parameters`-Eintrags: [successful] + Klartext-[reason] bei Reject (Contract §6a). */
 data class SetResult(val successful: Boolean, val reason: String)
+
+// --- P5.12: Capabilities (Dropdown-Enums) + Alerts ---
+
+/**
+ * Statische Enums aus `/hexapod/capabilities` (Always-On, latched) für die Overlay-Dropdowns.
+ * Reihenfolge = Index-Ausrichtung zu `status.stance_idx`/`tempo.tempo_idx` (Contract §6a).
+ */
+data class Capabilities(
+    val gaits: List<String>,
+    val stanceModes: List<String>,
+    val tempoPresets: List<String>,
+)
+
+/** Ein Alert aus `/hexapod/alerts` (WARN/ERROR/FATAL, latched Historie 50; Contract §6a). */
+data class Alert(
+    val stamp: Double,
+    val level: String,
+    val name: String,
+    val msg: String,
+)

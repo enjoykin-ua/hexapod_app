@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -56,6 +58,10 @@ fun DriveScreen(
     onBack: () -> Unit,
     onSetParam: (ParamSpec, ParamValue) -> Unit,
     onRequestParams: () -> Unit,
+    onSetGait: (String) -> Unit,
+    onSetStanceTarget: (Int) -> Unit,
+    onSetTempoTarget: (Int) -> Unit,
+    onClearAlerts: () -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -68,7 +74,7 @@ fun DriveScreen(
 
     Box(modifier.fillMaxSize().background(Color.Black)) {
         // --- Ebene 0: Center-View (Vollbild) ---
-        CenterPane(video, running, Modifier.fillMaxSize())
+        CenterPane(video, hmi, running, Modifier.fillMaxSize())
 
         // --- Ebene 1: Overlay (Top-/Bottom-Leiste) ---
         Column(
@@ -76,7 +82,7 @@ fun DriveScreen(
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             TopBar(connection, lifecycle, hmi.status, video.centerView, onBack, onSetCenter) { openPanel = it }
-            BottomBar(hmi, video.centerView == CenterView.KAMERA, onToggleCam)
+            BottomBar(hmi, video.centerView == CenterView.KAMERA, onToggleCam, onSetGait, onSetStanceTarget, onSetTempoTarget)
         }
 
         // --- Overlay-Panels: config gefüllt (P5.11); alerts/show noch Platzhalter (P5.12) ---
@@ -90,6 +96,12 @@ fun DriveScreen(
                     onRequestParams = onRequestParams,
                     onClose = { openPanel = null },
                 )
+                OverlayPanel.ALERTS -> AlertsPanelOverlay(
+                    alerts = hmi.alerts,
+                    contentPadding = contentPadding,
+                    onClear = onClearAlerts,
+                    onClose = { openPanel = null },
+                )
                 else -> OverlayPanelView(panel) { openPanel = null }
             }
         }
@@ -99,7 +111,7 @@ fun DriveScreen(
 // --- Ebene 0 ---
 
 @Composable
-private fun CenterPane(video: VideoState, running: Boolean, modifier: Modifier = Modifier) {
+private fun CenterPane(video: VideoState, hmi: HmiState, running: Boolean, modifier: Modifier = Modifier) {
     Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
         when (video.centerView) {
             CenterView.NOTHING -> {}   // dunkler Hintergrund, nur Overlay
@@ -117,7 +129,7 @@ private fun CenterPane(video: VideoState, running: Boolean, modifier: Modifier =
                     else -> CenterHint("Verbinde zum Video-Stream …")
                 }
             }
-            CenterView.ROBOT3D -> CenterHint("3D-Roboter-Ansicht — Phase 5")
+            CenterView.ROBOT3D -> Robot3dView(hmi.jointPositions, Modifier.fillMaxSize())
         }
     }
 }
@@ -181,7 +193,7 @@ private fun CenterToggle(active: CenterView, onSet: (CenterView) -> Unit) {
     ) {
         SegItem("Nichts", active == CenterView.NOTHING, enabled = true) { onSet(CenterView.NOTHING) }
         SegItem("Kamera", active == CenterView.KAMERA, enabled = true) { onSet(CenterView.KAMERA) }
-        SegItem("3D", active == CenterView.ROBOT3D, enabled = false) { onSet(CenterView.ROBOT3D) }
+        SegItem("3D", active == CenterView.ROBOT3D, enabled = true) { onSet(CenterView.ROBOT3D) }
     }
 }
 
@@ -209,8 +221,17 @@ private fun SegItem(label: String, selected: Boolean, enabled: Boolean, onClick:
 // --- Ebene 1: Bottom-Leiste ---
 
 @Composable
-private fun BottomBar(hmi: HmiState, camOn: Boolean, onToggleCam: () -> Unit) {
+private fun BottomBar(
+    hmi: HmiState,
+    camOn: Boolean,
+    onToggleCam: () -> Unit,
+    onSetGait: (String) -> Unit,
+    onSetStanceTarget: (Int) -> Unit,
+    onSetTempoTarget: (Int) -> Unit,
+) {
     val status = hmi.status
+    val caps = hmi.capabilities
+    val standing = status?.isStanding == true   // gait/stance/tempo sind standing-gated (§6a)
     Row(
         Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -220,9 +241,9 @@ private fun BottomBar(hmi: HmiState, camOn: Boolean, onToggleCam: () -> Unit) {
             FootGrid(hmi.footContacts)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 ValueSlot("state", status?.state.orNull())
-                ValueSlot("stance", status?.stance.orNull())
-                ValueSlot("gait", status?.gait.orNull())
-                ValueSlot("tempo", hmi.tempo?.tempo.orNull())
+                SelectableSlot("stance", status?.stance.orNull(), caps?.stanceModes ?: emptyList(), standing, hmi.cyclingStance) { idx, _ -> onSetStanceTarget(idx) }
+                SelectableSlot("gait", status?.gait.orNull(), caps?.gaits ?: emptyList(), standing, busy = false) { _, name -> onSetGait(name) }
+                SelectableSlot("tempo", hmi.tempo?.tempo.orNull(), caps?.tempoPresets ?: emptyList(), standing, hmi.cyclingTempo) { idx, _ -> onSetTempoTarget(idx) }
             }
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -342,6 +363,53 @@ private fun TipSlot(status: StatusSnapshot?) {
         else -> PLACEHOLDER
     }
     ValueSlot("tip", tip.orNull(), valueColor = color)
+}
+
+/**
+ * Antippbarer Wert-Slot mit Popup (P5.12, Q1=a): zeigt den Live-Wert; bei [enabled] öffnet ein Tap
+ * ein [DropdownMenu] mit [options]. [busy] → „…" während eines laufenden cycle-to-target. Disabled
+ * (nicht STANDING / keine Optionen) → nur Anzeige, kein ▾. [onSelect] liefert (Index, Name).
+ */
+@Composable
+private fun SelectableSlot(
+    label: String,
+    value: String?,
+    options: List<String>,
+    enabled: Boolean,
+    busy: Boolean,
+    onSelect: (Int, String) -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val canOpen = enabled && options.isNotEmpty()
+    val suffix = when {
+        busy -> " …"
+        canOpen -> " ▾"
+        else -> ""
+    }
+    Box {
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(6.dp))
+                .background(SCRIM)
+                .then(if (canOpen) Modifier.clickable { open = true } else Modifier)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        ) {
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(label, color = LABEL_GREY, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    (value ?: "—") + suffix,
+                    color = if (value == null) PLACEHOLDER else Color.White,
+                    fontFamily = FontFamily.Monospace,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            options.forEachIndexed { idx, opt ->
+                DropdownMenuItem(text = { Text(opt) }, onClick = { open = false; onSelect(idx, opt) })
+            }
+        }
+    }
 }
 
 @Composable

@@ -192,3 +192,41 @@ fun parseSetParametersResults(values: JSONObject): List<SetResult> {
         SetResult(o.optBoolean("successful", false), o.optString("reason", ""))
     }
 }
+
+// --- P5.12: Capabilities + Alerts + SetBool ---
+
+/** `/hexapod/capabilities` → [Capabilities] (Contract §6a, latched). */
+fun parseCapabilities(msg: JSONObject): Capabilities? {
+    val o = stringPayload(msg) ?: return null
+    return Capabilities(
+        gaits = stringList(o.optJSONArray("gaits")) ?: emptyList(),
+        stanceModes = stringList(o.optJSONArray("stance_modes")) ?: emptyList(),
+        tempoPresets = stringList(o.optJSONArray("tempo_presets")) ?: emptyList(),
+    )
+}
+
+/** `/hexapod/alerts` → ein [Alert] (Contract §6a; ein Alert je Nachricht, latched Historie). */
+fun parseAlert(msg: JSONObject): Alert? {
+    val o = stringPayload(msg) ?: return null
+    return Alert(
+        stamp = o.optDouble("stamp", 0.0),
+        level = o.optString("level", ""),
+        name = o.optString("name", ""),
+        msg = o.optString("msg", ""),
+    )
+}
+
+/** `std_srvs/SetBool`-Args: `{data:bool}` (cycle_stance/cycle_tempo, `true`=höher/schneller). */
+fun setBoolArgs(data: Boolean): JSONObject = JSONObject().put("data", data)
+
+// --- P5.13: /joint_states (3D-Viz) ---
+
+/** `/joint_states` (`sensor_msgs/JointState`) → Map `joint-name → position` [rad] (Reihenfolge parallel). */
+fun parseJointStates(msg: JSONObject): Map<String, Double> {
+    val names = msg.optJSONArray("name") ?: return emptyMap()
+    val pos = msg.optJSONArray("position") ?: return emptyMap()
+    val n = minOf(names.length(), pos.length())
+    val out = LinkedHashMap<String, Double>(n)
+    for (i in 0 until n) out[names.optString(i)] = pos.optDouble(i, 0.0)
+    return out
+}

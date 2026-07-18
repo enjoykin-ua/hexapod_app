@@ -52,6 +52,15 @@ class MainActivity : ComponentActivity() {
     private var isResumed = false
     private var videoRetries = 0
 
+    // P5.12: cycle-to-target-Zustand je Art (Stance/Tempo). Nur auf dem Main-Thread zugegriffen.
+    private val cycleTarget = mutableMapOf<CycleKind, Int>()
+    private val cycleLastIdx = mutableMapOf<CycleKind, Int>()
+    private val cycleSteps = mutableMapOf<CycleKind, Int>()
+    private val cycleTimeouts = mutableMapOf<CycleKind, Runnable>()
+
+    // P5.13: /joint_states nur abonnieren, solange die 3D-Ansicht aktiv ist (spart Bandbreite/Parse).
+    private var jointsSubscribed = false
+
     private val deviceListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = refreshDevices()
         override fun onInputDeviceRemoved(deviceId: Int) = refreshDevices()
@@ -81,6 +90,7 @@ class MainActivity : ComponentActivity() {
                         lifecycleState.statusMessage = null
                         lifecycleState.pendingAction = null
                         hmi.clear()
+                        jointsSubscribed = false   // Client hat die Handler verworfen -> Flag zurück
                     }
                     ConnState.CONNECTING -> {}
                 }
@@ -129,6 +139,10 @@ class MainActivity : ComponentActivity() {
                             onBack = { screen = Screen.LIFECYCLE; syncVideo() },
                             onSetParam = { spec, value -> setParam(spec, value) },
                             onRequestParams = { requestParamValues() },
+                            onSetGait = { name -> setGait(name) },
+                            onSetStanceTarget = { idx -> startCycle(CycleKind.STANCE, idx) },
+                            onSetTempoTarget = { idx -> startCycle(CycleKind.TEMPO, idx) },
+                            onClearAlerts = { hmi.alerts = emptyList() },
                             contentPadding = innerPadding,
                         )
                     }
@@ -200,7 +214,12 @@ class MainActivity : ComponentActivity() {
      */
     private fun subscribeHmi() {
         ros.subscribe("/hexapod/status", "std_msgs/msg/String", latched = false) { msg ->
-            parseStatus(msg)?.let { s -> mainHandler.post { hmi.status = s } }
+            parseStatus(msg)?.let { s ->
+                mainHandler.post {
+                    hmi.status = s
+                    onCycleIndexUpdate(CycleKind.STANCE)   // Fortschritt eines Stance-cycle prüfen
+                }
+            }
         }
         ros.subscribe("/hexapod/tempo", "std_msgs/msg/String", latched = true) { msg ->
             parseTempo(msg)?.let { t ->
@@ -209,6 +228,7 @@ class MainActivity : ComponentActivity() {
                     // §4.1: ein Tempo-Wechsel überschreibt die Scale-Params in joy_to_twist -> neu lesen,
                     // damit das Config-Panel die echten Werte zeigt.
                     requestParamValues(JOY_NODE)
+                    onCycleIndexUpdate(CycleKind.TEMPO)   // Fortschritt eines Tempo-cycle prüfen
                 }
             }
         }
@@ -220,6 +240,14 @@ class MainActivity : ComponentActivity() {
         // Nach Empfang Werte holen (greift, sobald der Stack läuft) -> schließt die Race Manifest<->Poll.
         ros.subscribe("/hexapod/config_manifest", "std_msgs/msg/String", latched = true) { msg ->
             parseManifest(msg)?.let { m -> mainHandler.post { hmi.manifest = m; requestParamValues() } }
+        }
+        // Capabilities (Always-On, latched) -> Dropdown-Enums schon beim Connect.
+        ros.subscribe("/hexapod/capabilities", "std_msgs/msg/String", latched = true) { msg ->
+            parseCapabilities(msg)?.let { c -> mainHandler.post { hmi.capabilities = c } }
+        }
+        // Alerts (Always-On, latched Historie 50) -> Liste akkumulieren (neueste oben, dedup/cap).
+        ros.subscribe("/hexapod/alerts", "std_msgs/msg/String", latched = true, depth = ALERTS_CAP) { msg ->
+            parseAlert(msg)?.let { a -> mainHandler.post { hmi.alerts = appendAlert(hmi.alerts, a) } }
         }
     }
 
@@ -269,6 +297,80 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // --- Phase 5: Dropdowns (gait direkt / stance+tempo cycle-to-target) + Alerts ---
+
+    /** gait-Dropdown: `gait_pattern` direkt setzen (namensbasiert; standing-gated in der UI, §ADR-P5-2). */
+    private fun setGait(name: String) {
+        ros.callServiceArgs(
+            "/gait_node/set_parameters",
+            setParametersArgs(listOf("gait_pattern" to ParamValue.StringV(name))),
+        ) { /* standing-gated -> Erfolg erwartet; Status-Topic spiegelt den neuen gait. */ }
+    }
+
+    /** Aktueller Ist-Index einer cycle-to-target-Art (aus status/tempo); `null` = keine Daten. */
+    private fun currentCycleIdx(kind: CycleKind): Int? = when (kind) {
+        CycleKind.STANCE -> hmi.status?.stanceIdx?.takeIf { it >= 0 }
+        CycleKind.TEMPO -> hmi.tempo?.tempoIdx?.takeIf { it >= 0 }
+    }
+
+    private fun setCycling(kind: CycleKind, on: Boolean) = when (kind) {
+        CycleKind.STANCE -> hmi.cyclingStance = on
+        CycleKind.TEMPO -> hmi.cyclingTempo = on
+    }
+
+    /** Dropdown-Auswahl (stance/tempo): Ziel-Index setzen und den ersten Schritt feuern. */
+    private fun startCycle(kind: CycleKind, target: Int) {
+        val cur = currentCycleIdx(kind) ?: return
+        if (cur == target) return
+        cycleTarget[kind] = target
+        cycleSteps[kind] = 0
+        setCycling(kind, true)
+        fireCycleStep(kind)
+    }
+
+    /**
+     * Einen Cycle-Schritt Richtung Ziel feuern (SetBool). Danach **nicht** sofort nachfeuern —
+     * erst das nächste status/tempo-Update ([onCycleIndexUpdate]) treibt den nächsten Schritt
+     * (Contract §6a: `success=false` = blockiert/nicht STANDING). Step-Cap + Timeout gegen Endlos.
+     */
+    private fun fireCycleStep(kind: CycleKind) {
+        val target = cycleTarget[kind] ?: return
+        val cur = currentCycleIdx(kind) ?: return finishCycle(kind)
+        val dir = nextCycleStep(cur, target) ?: return finishCycle(kind)
+        if ((cycleSteps[kind] ?: 0) >= CYCLE_STEP_CAP) return finishCycle(kind)
+        cycleSteps[kind] = (cycleSteps[kind] ?: 0) + 1
+        cycleLastIdx[kind] = cur
+        ros.callServiceArgs(kind.service, setBoolArgs(dir)) { /* Ergebnis egal: Fortschritt via Topic-Update */ }
+        armCycleTimeout(kind)
+    }
+
+    /** Nach [CYCLE_TIMEOUT_MS] ohne Fortschritt den Cycle abbrechen (Ziel unerreichbar / blockiert). */
+    private fun armCycleTimeout(kind: CycleKind) {
+        cycleTimeouts.remove(kind)?.let { mainHandler.removeCallbacks(it) }
+        val r = Runnable { finishCycle(kind) }
+        cycleTimeouts[kind] = r
+        mainHandler.postDelayed(r, CYCLE_TIMEOUT_MS)
+    }
+
+    /** Aus dem status/tempo-Handler: Ziel erreicht → fertig; Ist-Index änderte sich → nächster Schritt. */
+    private fun onCycleIndexUpdate(kind: CycleKind) {
+        val target = cycleTarget[kind] ?: return
+        val cur = currentCycleIdx(kind) ?: return
+        when {
+            cur == target -> finishCycle(kind)
+            cur != cycleLastIdx[kind] -> fireCycleStep(kind)   // Fortschritt -> nächster Schritt
+            // sonst: keine Änderung (blockiert) -> weiter warten (Timeout greift)
+        }
+    }
+
+    private fun finishCycle(kind: CycleKind) {
+        cycleTarget.remove(kind)
+        cycleSteps.remove(kind)
+        cycleLastIdx.remove(kind)
+        cycleTimeouts.remove(kind)?.let { mainHandler.removeCallbacks(it) }
+        setCycling(kind, false)
+    }
+
     // --- Phase 4: Navigation + Video-Stream-Orchestrierung ---
 
     /** In den Fahr-Screen wechseln + **Betreten-Poll** (frischer Stack-Status fürs Kamera-Gate). */
@@ -300,6 +402,28 @@ class MainActivity : ComponentActivity() {
             videoState.streaming = false
             videoState.frame = null
             video.stop()
+        }
+        syncJointStates()   // 3D-Viz-Subscription am selben Gate nachziehen
+    }
+
+    /**
+     * `/joint_states` nur abonnieren, während die **3D-Ansicht** aktiv sichtbar ist (verbunden +
+     * Fahr-Screen + Center=3D + Vordergrund). Beim Verlassen wieder abbestellen + Puffer leeren →
+     * kein Joint-Stream/Parse im Hintergrund (P5.13).
+     */
+    private fun syncJointStates() {
+        val want = isResumed && connection.state == ConnState.CONNECTED &&
+            screen == Screen.DRIVE && videoState.centerView == CenterView.ROBOT3D
+        if (want && !jointsSubscribed) {
+            jointsSubscribed = true
+            ros.subscribe("/joint_states", "sensor_msgs/msg/JointState", latched = false) { msg ->
+                val jp = parseJointStates(msg)
+                if (jp.isNotEmpty()) mainHandler.post { hmi.jointPositions = jp }
+            }
+        } else if (!want && jointsSubscribed) {
+            jointsSubscribed = false
+            ros.unsubscribe("/joint_states")
+            hmi.jointPositions = emptyMap()
         }
     }
 
@@ -416,6 +540,8 @@ class MainActivity : ComponentActivity() {
 
     companion object {
         private const val JOY_NODE = "/joy_to_twist"   // Host der Tempo-Scale-Params (§4.1-Reload)
+        private const val CYCLE_STEP_CAP = 6        // max Cycle-Schritte (Backstop; 3-4 Presets)
+        private const val CYCLE_TIMEOUT_MS = 4_000L // Cycle-to-target abbrechen, wenn kein Fortschritt
         private const val PUBLISH_PERIOD_MS = 33L   // ~30 Hz (NF1: stetig, auch bei neutral)
         private const val VIDEO_MAX_RETRIES = 3     // Stream-Auto-Retry (Port 8080 vs. Status-Latenz)
         private const val VIDEO_RETRY_DELAY_MS = 1_500L
