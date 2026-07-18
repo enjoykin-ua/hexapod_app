@@ -127,6 +127,8 @@ class MainActivity : ComponentActivity() {
                             onSetCenter = { cv -> videoState.centerView = cv; syncVideo() },
                             onToggleCam = { videoState.centerView = toggleCam(videoState.centerView); syncVideo() },
                             onBack = { screen = Screen.LIFECYCLE; syncVideo() },
+                            onSetParam = { spec, value -> setParam(spec, value) },
+                            onRequestParams = { requestParamValues() },
                             contentPadding = innerPadding,
                         )
                     }
@@ -179,8 +181,9 @@ class MainActivity : ComponentActivity() {
                     lifecycleState.stack = StackState.UNKNOWN
                     lifecycleState.statusMessage = null
                 }
-                // Stack nicht (mehr) aktiv -> stack-gebundene Overlay-Daten invalidieren (kein Stale)
-                if (lifecycleState.stack != StackState.RUNNING) hmi.clearStackData()
+                // Stack nicht (mehr) aktiv -> stack-gebundene Overlay-Daten invalidieren (kein Stale);
+                // läuft er -> aktuelle Param-Werte holen (Panel zeigt echte statt Default-Werte).
+                if (lifecycleState.stack != StackState.RUNNING) hmi.clearStackData() else requestParamValues()
                 // frischer Stack-Status -> Kamera-Gate nachziehen (startet/stoppt den Stream)
                 syncVideo()
             }
@@ -200,11 +203,69 @@ class MainActivity : ComponentActivity() {
             parseStatus(msg)?.let { s -> mainHandler.post { hmi.status = s } }
         }
         ros.subscribe("/hexapod/tempo", "std_msgs/msg/String", latched = true) { msg ->
-            parseTempo(msg)?.let { t -> mainHandler.post { hmi.tempo = t } }
+            parseTempo(msg)?.let { t ->
+                mainHandler.post {
+                    hmi.tempo = t
+                    // §4.1: ein Tempo-Wechsel überschreibt die Scale-Params in joy_to_twist -> neu lesen,
+                    // damit das Config-Panel die echten Werte zeigt.
+                    requestParamValues(JOY_NODE)
+                }
+            }
         }
         ros.subscribe("/foot_contacts", "std_msgs/msg/Float64MultiArray", latched = false) { msg ->
             val raw = parseFootContactsRaw(msg)
             if (raw.isNotEmpty()) mainHandler.post { hmi.footContacts = footContacts(raw) }
+        }
+        // Config-Manifest (Always-On, latched) -> schon beim Connect da; Panel rendert generisch daraus.
+        // Nach Empfang Werte holen (greift, sobald der Stack läuft) -> schließt die Race Manifest<->Poll.
+        ros.subscribe("/hexapod/config_manifest", "std_msgs/msg/String", latched = true) { msg ->
+            parseManifest(msg)?.let { m -> mainHandler.post { hmi.manifest = m; requestParamValues() } }
+        }
+    }
+
+    /**
+     * Aktuelle Parameter-Werte lesen (gebündelt **je Node**, ein Call pro Node). [nodeFilter] != null
+     * → nur dieser Node (z. B. joy_to_twist nach Tempo-Wechsel). No-op ohne Manifest oder wenn der
+     * Stack nicht läuft (die Ziel-Nodes existieren nur im laufenden Stack).
+     */
+    private fun requestParamValues(nodeFilter: String? = null) {
+        val m = hmi.manifest ?: return
+        if (lifecycleState.stack != StackState.RUNNING) return
+        for ((node, specs) in m.params.groupBy { it.node }) {
+            if (nodeFilter != null && node != nodeFilter) continue
+            val names = specs.map { it.param }
+            ros.callServiceArgs("$node/get_parameters", getParametersArgs(names)) { raw ->
+                if (raw.result && raw.values != null) {
+                    val vals = parseGetParametersValues(raw.values, node, names)
+                    if (vals.isNotEmpty()) mainHandler.post { hmi.paramValues = hmi.paramValues + vals }
+                }
+            }
+        }
+    }
+
+    /**
+     * Einen Param live setzen (rosbridge `set_parameters`). Erfolg → [HmiState.paramValues] aktualisieren
+     * + Fehler löschen; Reject (`successful=false`) → `reason` in [HmiState.paramErrors] (Contract §6a
+     * Pflicht 3); der angezeigte Wert bleibt der zuletzt bestätigte (kein optimistisches Übernehmen).
+     */
+    private fun setParam(spec: ParamSpec, value: ParamValue) {
+        val key = spec.key()
+        ros.callServiceArgs("${spec.node}/set_parameters", setParametersArgs(listOf(spec.param to value))) { raw ->
+            mainHandler.post {
+                val result = if (raw.result && raw.values != null) {
+                    parseSetParametersResults(raw.values).firstOrNull()
+                } else {
+                    null
+                }
+                when {
+                    result != null && result.successful -> {
+                        hmi.paramValues = hmi.paramValues + (key to value)
+                        hmi.paramErrors = hmi.paramErrors - key
+                    }
+                    result != null -> hmi.paramErrors = hmi.paramErrors + (key to result.reason.ifEmpty { "abgelehnt" })
+                    else -> hmi.paramErrors = hmi.paramErrors + (key to raw.error.ifEmpty { "Fehler beim Setzen" })
+                }
+            }
         }
     }
 
@@ -354,6 +415,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val JOY_NODE = "/joy_to_twist"   // Host der Tempo-Scale-Params (§4.1-Reload)
         private const val PUBLISH_PERIOD_MS = 33L   // ~30 Hz (NF1: stetig, auch bei neutral)
         private const val VIDEO_MAX_RETRIES = 3     // Stream-Auto-Retry (Port 8080 vs. Status-Latenz)
         private const val VIDEO_RETRY_DELAY_MS = 1_500L

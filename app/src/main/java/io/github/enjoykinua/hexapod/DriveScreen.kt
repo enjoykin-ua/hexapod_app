@@ -54,6 +54,8 @@ fun DriveScreen(
     onSetCenter: (CenterView) -> Unit,
     onToggleCam: () -> Unit,
     onBack: () -> Unit,
+    onSetParam: (ParamSpec, ParamValue) -> Unit,
+    onRequestParams: () -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -77,8 +79,20 @@ fun DriveScreen(
             BottomBar(hmi, video.centerView == CenterView.KAMERA, onToggleCam)
         }
 
-        // --- Overlay-Panels (config/alerts/show) — leer, Phase-5-Platzhalter ---
-        openPanel?.let { OverlayPanelView(it) { openPanel = null } }
+        // --- Overlay-Panels: config gefüllt (P5.11); alerts/show noch Platzhalter (P5.12) ---
+        openPanel?.let { panel ->
+            when (panel) {
+                OverlayPanel.CONFIG -> ConfigPanelOverlay(
+                    hmi = hmi,
+                    lifecycle = lifecycle,
+                    contentPadding = contentPadding,
+                    onSetParam = onSetParam,
+                    onRequestParams = onRequestParams,
+                    onClose = { openPanel = null },
+                )
+                else -> OverlayPanelView(panel) { openPanel = null }
+            }
+        }
     }
 }
 
@@ -139,7 +153,7 @@ private fun TopBar(
         CenterToggle(centerView, onSetCenter)
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
             SlotButton("⚠ alerts") { onOpenPanel(OverlayPanel.ALERTS) }
-            SlotButton("⚙") { onOpenPanel(OverlayPanel.CONFIG) }
+            SlotButton("⚙ config") { onOpenPanel(OverlayPanel.CONFIG) }
             SlotButton("show") { onOpenPanel(OverlayPanel.SHOW) }
         }
     }

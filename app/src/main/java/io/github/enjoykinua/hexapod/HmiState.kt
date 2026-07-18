@@ -23,17 +23,31 @@ class HmiState {
     /** Fuß-Kontakte (genau [FOOT_COUNT] Einträge, oder leer solange keine Daten). */
     var footContacts by mutableStateOf<List<Boolean>>(emptyList())
 
+    /** Config-Manifest aus `/hexapod/config_manifest` (Always-On, latched; `null` = noch keins). */
+    var manifest by mutableStateOf<ConfigManifest?>(null)
+
+    /** Bestätigte Parameter-Werte (Key `node|param`, s. [paramKey]) — aus `get_parameters`/erfolgreichem Set. */
+    var paramValues by mutableStateOf<Map<String, ParamValue>>(emptyMap())
+
+    /** Letzter Reject-`reason` je Param (Key `node|param`) — Contract §6a Pflicht 3. */
+    var paramErrors by mutableStateOf<Map<String, String>>(emptyMap())
+
     /**
-     * Stack-gebundene Live-Daten (status/tempo/foot) invalidieren — z. B. wenn der Stack stoppt,
-     * damit das Overlay nicht veraltete Werte zeigt. (Always-On-Daten wie Capabilities/Manifest
-     * bleiben; die kommen ab P5.11 dazu und überleben einen Stack-Stopp.)
+     * Stack-gebundene Live-Daten invalidieren — status/tempo/foot **und** die Param-Werte/-Fehler
+     * (aus den Stack-Nodes), z. B. wenn der Stack stoppt. Das **Manifest** (Always-On) bleibt →
+     * das Panel rendert weiter (mit Defaults), nur get/set ruht bis der Stack wieder läuft.
      */
     fun clearStackData() {
         status = null
         tempo = null
         footContacts = emptyList()
+        paramValues = emptyMap()
+        paramErrors = emptyMap()
     }
 
-    /** Bei Verbindungsabbruch: alle Live-Daten invalidieren (Overlay zeigt Platzhalter). */
-    fun clear() = clearStackData()
+    /** Bei Verbindungsabbruch: alle Live-Daten invalidieren (inkl. Always-On-Manifest). */
+    fun clear() {
+        clearStackData()
+        manifest = null
+    }
 }

@@ -260,9 +260,9 @@ Phase 5 App (P5.10–P5.13):
 - [x] P5.10b [Transport] RosbridgeProtocol: subscribe-Frames (latched-QoS §7.4), callServiceArgs, parsePublish/parseRawResponse; HmiProtocol-Parser status/tempo/foot ✅ (get/set_parameters+SetBool+caps/manifest/alerts/joints → mit ihrer Stufe, s. Abweichung ↓)
 - [x] P5.10c [Overlay] HmiState-Halter + Slots gefüllt (state/stance/gait/tempo/safety/tip) + Foot-Raster grün; Merge status+tempo; Platzhalter wenn leer; Stale-Clear bei Stack-Stopp ✅
 - [x] P5.10  [Checkpoint] testDebugUnitTest 47/0 grün + assembleDebug ok + Self-Review; **User-Sicht offen**
-- [ ] P5.11a [Config] Manifest-Parse + generisches Panel (Gruppen, Slider ±/Eintipp, Toggle, Dropdown), advanced eingeklappt; Slot-Text „⚙ config"
-- [ ] P5.11b [Config] get/set_parameters-Glue; Gating + Dynamic-Cap + Reject-reason; Tempo↔Scales-Reload
-- [ ] P5.11  [Checkpoint] ConfigLogicTest grün + Self-Review; User-Sicht
+- [x] P5.11a [Config] Manifest-Parse + generisches Panel (Gruppen, Slider ±/Eintipp/Drag, Toggle, Dropdown), advanced eingeklappt + Warnung; Slot-Text „⚙ config" ✅
+- [x] P5.11b [Config] get/set_parameters-Glue; Gating + Dynamic-Cap + Reject-reason; Tempo↔Scales-Reload; Slider-Revert bei Reject ✅
+- [x] P5.11  [Checkpoint] ConfigLogicTest 18 grün (Summe 65/0) + assembleDebug ok + Self-Review; **User-Sicht offen**
 - [ ] P5.12a [Dropdowns] antippbare Slots stance/gait/tempo -> Popup (capabilities); gait (set_parameters) + stance/tempo (cycle-to-target, ein Controller), standing-gated
 - [ ] P5.12b [Alerts] Alerts-Liste (Level-Farbe) + „Alles kopieren" + lokaler „Löschen"-Button; Reset+Dedup beim Subscribe
 - [ ] P5.12  [Checkpoint] CycleLogicTest/AlertLogicTest grün + Self-Review; User-Sicht
