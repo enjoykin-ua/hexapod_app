@@ -1,4 +1,4 @@
-# Phase 5 (App) — Status-Overlay + Config-Panel + Dropdowns + 3D-Viz — §4-Plan
+bei # Phase 5 (App) — Status-Overlay + Config-Panel + Dropdowns + 3D-Viz — §4-Plan
 
 > **Ziel:** Die in Phase 4 positionierten **leeren** Overlay-Slots/Panels mit **Live-Daten**
 > füllen und ein **rqt-artiges Config-Panel** bauen. Reine App-Arbeit gegen den **fertigen**
@@ -334,3 +334,40 @@ sichtbar · Dropdowns gait/tempo/stance funktionieren · Alerts-Liste + Kopieren
 - `docs/NEXT.md` überschreiben (Stand Phase 5, Resume-Prompt).
 - `CLAUDE.md` §7 „Aktuell: Phase 5" + Navigations-Index-Zeile für dieses Doc.
 - **Kein** Contract-Change (App-Seite baut nur dagegen).
+
+---
+
+## 7. Post-Review-Nachbesserungen (nach P5.14, vor T5.15)
+
+Aus einer kritischen Architektur-Durchsicht + erstem User-Test:
+
+- **B3 — `HmiController` extrahiert:** die Phase-5-HMI-Orchestrierung (Subscriptions, Param get/set,
+  cycle-to-target) ist aus der 549-Zeilen-`MainActivity` in einen framework-leichten `HmiController`
+  gewandert (Activity schlank, HMI zentralisiert; verhaltensgleich).
+- **B4 — Subs an den Vordergrund gekoppelt:** HMI-Topics werden bei `onPause` abbestellt / bei
+  `onResume` (+verbunden) neu abonniert → kein status/foot-Verkehr im Hintergrund (wie `/joy`/Video).
+- **C5 — `onDestroy`-Cleanup:** anstehende Cycle-Timeouts + Video-Retry-Callbacks werden abgeräumt.
+- **A1/A2 — Doku:** `architecture.md` §4.4 (veraltete Phase-5-Zeile) + §4.5 (Always-On/On-Demand-
+  Verfügbarkeit, Subscription-Lifecycle, `HmiController`) nachgezogen.
+- **GUI:** Status-Chips (verbunden/Stack/safety/tip) links **vertikal** gestapelt → oben Platz, `show`
+  wird nicht mehr abgeschnitten. Center-Toggle + alerts/config/show unverändert.
+- **3D-Ansicht:** **feste Kamera** (kein „Schwingen" — feste Skalierung/Zentrierung statt Auto-Fit);
+  **1 Finger = orbitieren, 2 Finger = zoomen** (Blickwinkel/Zoom bleiben über Pose-Änderungen erhalten,
+  nicht persistiert); **Füße 2× größer**; **Bein-1-Femur grün**.
+
+### 7a. Live-Test-Fixes (2. User-Runde)
+
+- **3D war spiegelverkehrt → behoben:** die alte Iso-Projektion enthielt (mit screen-y-down) eine
+  Reflexion (Bein-Reihenfolge CCW statt CW). Ersetzt durch eine **rechtshändig konstruierte
+  `cameraProject`** (Azimuth/Elevation, `right = forward × worldUp`) → spiegelfrei, Bein 1 oben-rechts,
+  Uhrzeigersinn wie in der Sim. `rotateView`+`project` entfernt; Tests angepasst (Top-down-Chiralität).
+- **Foot-Raster** auf **„4 1 / 5 2 / 6 3"** umgestellt (rechte Beine 1–3 rechts). Bein-Reihenfolge
+  `data[i]`→`leg_(i+1)` **ROS-bestätigt** (keine Index-Justage nötig).
+- **3D-Füße kontaktabhängig gefärbt:** grün bei Bodenkontakt / grau ohne (aus `/foot_contacts`), statt
+  immer grün.
+- **`queue_length:1`** in den Subscribe-Frames von `status`/`foot_contacts`/`joint_states` (ROS-Agent-
+  Tipp) → rosbridge hält nur den neuesten Frame, weniger Latenz bei High-Rate.
+
+**Verbleibend für T5.15 (Live):** Config-Panel-Feinprüfung (nicht alle Params verifiziert);
+3D **femur/tibia-Vorzeichen** (knicken die Beine nach unten?) am echten Bild — Chiralität/Spiegelung
+ist jetzt gefixt.

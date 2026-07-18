@@ -1,8 +1,6 @@
 package io.github.enjoykinua.hexapod
 
 import kotlin.math.PI
-import kotlin.math.cos
-import kotlin.math.sin
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -45,12 +43,33 @@ class Robot3dLogicTest {
     }
 
     @Test
-    fun `project ist isometrisch und z zeigt nach oben`() {
-        val px = project(Vec3(1.0, 0.0, 0.0))
-        assertEquals(cos(PI / 6), px.x, 1e-9)
-        assertEquals(sin(PI / 6), px.y, 1e-9)
-        val pz = project(Vec3(0.0, 0.0, 1.0))
-        assertEquals(0.0, pz.x, 1e-9)
-        assertEquals(-1.0, pz.y, 1e-9)   // höheres z -> kleineres sy (oben)
+    fun `cameraProject spiegelfrei von oben`() {
+        // Von oben (elevation pi/2, azimuth 0): x vorne -> oben, +y links -> links, Ursprung fix.
+        val front = cameraProject(Vec3(1.0, 0.0, 0.0), 0.0, PI / 2)
+        assertEquals(0.0, front.x, 1e-9)
+        assertEquals(-1.0, front.y, 1e-9)   // vorne (x+) -> screen oben (kleineres y)
+        val left = cameraProject(Vec3(0.0, 1.0, 0.0), 0.0, PI / 2)
+        assertEquals(-1.0, left.x, 1e-9)    // links (y+) -> screen links (kein Spiegel)
+        assertEquals(0.0, left.y, 1e-9)
+        val origin = cameraProject(Vec3(0.0, 0.0, 0.0), 1.2, 0.7)
+        assertEquals(0.0, origin.x, 1e-9)   // Body-Ursprung bleibt fix (Zentrum)
+        assertEquals(0.0, origin.y, 1e-9)
+    }
+
+    @Test
+    fun `cameraProject z zeigt nach oben`() {
+        // Seitenblick (elevation 0): z -> nach oben (screen y negativ).
+        val up = cameraProject(Vec3(0.0, 0.0, 1.0), 0.0, 0.0)
+        assertEquals(0.0, up.x, 1e-9)
+        assertEquals(-1.0, up.y, 1e-9)
+    }
+
+    @Test
+    fun `cameraProject Bein 1 liegt oben-rechts`() {
+        // 3/4-Blick: Bein 1 (vorne-rechts, y<0) -> rechts (x>0) und oben (y<0). Chiralität wie Sim.
+        val leg1Mount = LEG_MOUNTS[0]
+        val p = cameraProject(Vec3(leg1Mount.x, leg1Mount.y, leg1Mount.z), 0.0, 0.6)
+        assertTrue("Bein 1 rechts", p.x > 0.0)
+        assertTrue("Bein 1 oben", p.y < 0.0)
     }
 }

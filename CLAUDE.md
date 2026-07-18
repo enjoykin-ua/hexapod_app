@@ -191,7 +191,7 @@ Sticks/Tasten fahren den Roboter, der Handy-Screen zeigt Video-Vollbild + Overla
 > Phase 1 (Hello-World) war app-lokal (`docs/phase_1_stage_b_brief.md`); **ab Phase 2** =
 > hexapod_ws-Phasenplan.
 > **Aktuell: Phase 5** — Status-Overlay + Config-Panel + Dropdowns + 3D-Viz. App-Code fertig & grün
-> (P5.10–P5.14, `testDebugUnitTest` 77/0); **offen: T5.15** (Live-Integration mit User). Plan:
+> (P5.10–P5.14, `testDebugUnitTest` 79/0); **offen: T5.15** (Live-Integration mit User). Plan:
 > `docs/phase_5_status_config_plan.md` + Interface `interface_contract.md` **v0.9.1 §6a** (5 JSON-Topics
 > + Config-Manifest + native Param-Services + Set-Stance/Set-Tempo). Der `RosbridgeClient` kann jetzt
 > subscribe + `call_service` mit Args (der `/joy`-/Trigger-Pfad bleibt unverändert).

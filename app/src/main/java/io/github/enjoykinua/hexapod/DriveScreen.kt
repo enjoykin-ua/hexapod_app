@@ -129,7 +129,7 @@ private fun CenterPane(video: VideoState, hmi: HmiState, running: Boolean, modif
                     else -> CenterHint("Verbinde zum Video-Stream …")
                 }
             }
-            CenterView.ROBOT3D -> Robot3dView(hmi.jointPositions, Modifier.fillMaxSize())
+            CenterView.ROBOT3D -> Robot3dView(hmi.jointPositions, hmi.footContacts, Modifier.fillMaxSize())
         }
     }
 }
@@ -156,7 +156,9 @@ private fun TopBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.Top,
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        // Links vertikal gestapelt (User-Wunsch): zurück + Verbindung/Stack + safety + tip — so bleibt
+        // oben Platz, damit rechts alerts/config/show nicht mehr abgeschnitten werden.
+        Column(horizontalAlignment = Alignment.Start, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             SlotButton("‹ zurück", onClick = onBack)
             ConnSlot(connection, lifecycle)
             SafetySlot(status)
@@ -254,17 +256,17 @@ private fun BottomBar(
 }
 
 /**
- * Fuß-Kontakt-Raster 2×3 „1 4 / 2 5 / 3 6" (Phase 5): grün = Bodenkontakt, grau = kein Kontakt /
- * noch keine Daten. [contacts] hat genau [FOOT_COUNT] Einträge oder ist leer (Platzhalter grau).
- * Index→Position: 0→„1" 1→„2" 2→„3" 3→„4" 4→„5" 5→„6" (Bein-Zuordnung beim Live-Test verifiziert).
+ * Fuß-Kontakt-Raster 2×3 „4 1 / 5 2 / 6 3" (Phase 5): grün = Bodenkontakt, grau = kein Kontakt /
+ * noch keine Daten. Links die Bein-Nummern 4/5/6, rechts 1/2/3 — passend zur physischen Lage
+ * (rechte Beine 1–3 rechts, linke Beine 4–6 links). Index→Bein: `data[i]`→`leg_(i+1)` (ROS-bestätigt).
  */
 @Composable
 private fun FootGrid(contacts: List<Boolean>) {
     fun c(i: Int): Boolean? = contacts.getOrNull(i)
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("1", c(0)); FootChip("4", c(3)) }
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("2", c(1)); FootChip("5", c(4)) }
-        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("3", c(2)); FootChip("6", c(5)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("4", c(3)); FootChip("1", c(0)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("5", c(4)); FootChip("2", c(1)) }
+        Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) { FootChip("6", c(5)); FootChip("3", c(2)) }
     }
 }
 

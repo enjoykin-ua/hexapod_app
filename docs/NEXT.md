@@ -11,7 +11,7 @@
 ## Wo wir stehen
 
 **Phase 5 — Status-Overlay + Config-Panel + Dropdowns + 3D-Viz.** App-Code **fertig & grün**
-(P5.10–P5.14): `assembleDebug` ✅, `testDebugUnitTest` **77/0** (neu: `FootLogicTest` 5,
+(P5.10–P5.14): `assembleDebug` ✅, `testDebugUnitTest` **79/0** (neu: `FootLogicTest` 5,
 `ConfigLogicTest` 18, `CycleLogicTest` 3, `AlertLogicTest` 4, `Robot3dLogicTest` 5).
 **Offen:** **T5.15** = End-to-End-Live-Test (User + Handy) gegen die laufende ROS-Seite.
 
@@ -32,7 +32,7 @@ mit Args** (get/set_parameters, SetBool) — der Phase-2/3-`/joy`-/Trigger-Pfad 
 
 ## Die zwei „Test"-Ebenen
 
-1. **App-Logik ohne Hardware** (`testDebugUnitTest`, 77/0): `ConfigLogic`/`CycleLogic`/`FootLogic`/
+1. **App-Logik ohne Hardware** (`testDebugUnitTest`, 79/0): `ConfigLogic`/`CycleLogic`/`FootLogic`/
    `AlertLogic`/`Robot3dLogic`. Der org.json-Glue (`HmiProtocol`, `RosbridgeClient`-Routing) +
    Compose-Rendering sind bewusst **nicht** unit-getestet (SDK/Netz) → Integration.
 2. **Echtes Ausprobieren (T5.15):** braucht die laufende ROS-Seite (always_on → bringup_start →
@@ -56,15 +56,21 @@ Ab `always_on` sind `capabilities`/`config_manifest`/`alerts` da; nach `bringup_
 - **Dropdowns:** `stance`/`gait`/`tempo` antippen → Popup → Auswahl greift (stance/tempo cyclen
   schrittweise zum Ziel). Nur im Stand aktiv.
 - **Alerts** (`⚠ alerts`): ein WARN am Roboter erscheint in der Liste; „Kopieren"/„Löschen".
-- **3D** (Center-Toggle): animiert aus `/joint_states`. **Vorzeichen prüfen** (siehe Plan §4):
-  falls Beine nach oben statt unten knicken oder falsch herum splayen → ein Sign-Flip in
-  `Robot3dLogic.legPoints` (femur/tibia `-z` bzw. coxa-Richtung).
+- **3D** (Center-Toggle): animiert aus `/joint_states`, **feste Kamera** (kein Schwingen),
+  **spiegelfrei** (rechtshändige `cameraProject` — Bein 1 vorne-rechts/oben-rechts, grüner Femur).
+  **1 Finger = orbitieren** (horiz.=Azimuth, vert.=Elevation), **2 Finger = zoomen**; große Füße,
+  je Fuß **grün bei Kontakt / grau ohne** (aus `/foot_contacts`). **Restcheck:** knicken die Beine
+  nach oben statt unten → Sign-Flip femur/tibia (`Robot3dLogic.legPoints`, `-z`).
+- **Foot-Raster** (unten links): Layout **„4 1 / 5 2 / 6 3"** (rechte Beine 1–3 rechts); `data[i]`→`leg_(i+1)`
+  ROS-bestätigt.
+- **GUI:** Status-Chips (verbunden/Stack/safety/tip) stehen jetzt **links vertikal**; `show` rechts
+  wird nicht mehr abgeschnitten.
 
 ## Resume-Prompt (copy-paste in die App-Session)
 
 ```
 Wir sind in hexapod_app, Phase 5 (Status-Overlay + Config + Dropdowns + 3D). App-Code ist fertig
-und grün (P5.10–P5.14, 77/0), offen ist nur T5.15 (End-to-End-Live-Test). Kontext:
+und grün (P5.10–P5.14, 79/0), offen ist nur T5.15 (End-to-End-Live-Test). Kontext:
 docs/phase_5_status_config_plan.md + interface_contract.md v0.9.1 (§6a).
 
 Ich habe den Live-Test gemacht (ROS: always_on -> connect -> bringup_start -> stand_up). Ergebnis:

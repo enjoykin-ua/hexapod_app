@@ -75,15 +75,21 @@ fun robotLegs(joints: Map<String, Double>): List<List<Vec3>> =
         )
     }
 
-/** Isometrischer Blickwinkel (30°) für die Projektion. */
-private const val ISO = PI / 6
-
 /**
- * Isometrische Projektion base-Frame → 2D: `sx = (x−y)·cos30`, `sy = (x+y)·sin30 − z`. Höheres z
- * (weiter oben) → kleineres `sy` → im Canvas (y nach unten) weiter oben. Skalierung/Zentrierung
- * macht [Robot3dView] (auto-fit).
+ * Orthographische **Kamera-Projektion** base-Frame → 2D (Canvas-Koordinaten, y nach unten).
+ * [azimuth] = Orbit um die Hochachse (1-Finger-Drag horizontal), [elevation] = Blickhöhe über der
+ * Horizontalen (vertikal; ~π/2 ≈ von oben). Die Kamera-Basis ist **rechtshändig** konstruiert
+ * (`right = forward × worldUp`, `up = right × forward`) → **keine Spiegelung**: Bein 1 (vorne-rechts)
+ * liegt oben-rechts, die Beine laufen im Uhrzeigersinn wie in der Simulation. Der Body-Ursprung
+ * (0,0,0) bleibt fix (Zentrum); z zeigt nach oben (kleineres screen-y). Skalierung/Zentrierung/Zoom
+ * macht [Robot3dView] (feste Kamera, kein Auto-Fit → kein Schwingen bei Beinbewegung).
  */
-fun project(v: Vec3): Pt2 = Pt2(
-    x = (v.x - v.y) * cos(ISO),
-    y = (v.x + v.y) * sin(ISO) - v.z,
-)
+fun cameraProject(v: Vec3, azimuth: Double, elevation: Double): Pt2 {
+    val sa = sin(azimuth)
+    val ca = cos(azimuth)
+    val se = sin(elevation)
+    val ce = cos(elevation)
+    val sx = v.x * sa - v.y * ca                       // rechts (horizontal, elevationsunabhängig)
+    val syUp = se * (v.x * ca + v.y * sa) + ce * v.z   // oben
+    return Pt2(sx, -syUp)
+}

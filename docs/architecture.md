@@ -188,9 +188,21 @@ Config-Manifest + native Param-Services + Set-Stance/Set-Tempo). Details/ADRs:
 | `HmiState.kt` | Compose-Snapshot-Halter aller HMI-Live-Daten |
 | `RosbridgeProtocol.kt` (erw.) | + subscribe-Frames (latched-QoS §7.4), `callServiceArgs`, generische `RawResponse`, `parsePublish` |
 | `RosbridgeClient.kt` (erw.) | + `subscribe`/`unsubscribe` + `publish`-Routing an Topic-Handler; `callServiceArgs` |
-| `ConfigPanel.kt` · `AlertsPanel.kt` · `Robot3dView.kt` | Compose-UI (generisches Panel; Alerts-Liste; 3D-Canvas) |
-| `DriveScreen.kt` (erw.) | Overlay-Slots live; antippbare Dropdown-Slots; Panels gefüllt; 3D-Center aktiv |
-| `MainActivity.kt` (erw.) | Subscribe bei Connect; get/set-Params; cycle-to-target-Orchestrierung; joint_states-Gate |
+| `HmiController.kt` | **framework-leichter Orchestrator** (B3): Subscriptions + Param get/set + cycle-to-target; hält `ros`+`hmi`+`Handler` |
+| `ConfigPanel.kt` · `AlertsPanel.kt` · `Robot3dView.kt` | Compose-UI (generisches Panel; Alerts-Liste; 3D-Canvas mit 1-Finger-Rotation/2-Finger-Zoom) |
+| `DriveScreen.kt` (erw.) | Overlay-Slots live (Status-Chips links vertikal); antippbare Dropdown-Slots; Panels gefüllt; 3D-Center aktiv |
+| `MainActivity.kt` (erw.) | delegiert die HMI-Orchestrierung an `HmiController`; Lifecycle-Gates (Video/Subs/joints) |
+
+**Verfügbarkeits-Schichten (Contract §6a):** `capabilities`/`config_manifest`/`alerts` laufen in der
+**Always-On-Schicht** (`hmi_status`) → schon **beim Connect** da (Panel + Dropdowns sofort befüllbar,
+noch vor dem Roboterstart). `status`/`tempo`/`foot_contacts`/`joint_states` kommen aus dem
+**On-Demand-Stack** → erst **nach `bringup_start`**. Darum rendert das Config-Panel vor dem Start
+(aus dem Manifest, mit Defaults), aber `get/set_parameters` greifen erst, wenn der Stack läuft.
+
+**Subscription-Lifecycle:** Die HMI-Subscriptions sind an **verbunden × Vordergrund** gekoppelt
+(`HmiController.start/stopSubscriptions`, B4) — im Hintergrund kein status/foot-Verkehr. `/joint_states`
+(high-rate) ist zusätzlich nur abonniert, solange die 3D-Ansicht aktiv ist. Bei Reconnect verwirft der
+`RosbridgeClient` die Handler (`reset`), die Activity subscribt beim nächsten CONNECTED neu.
 
 **Datenfluss (HMI, Phase 5):**
 ```
@@ -213,10 +225,13 @@ Wächst phasenweise; jede neue Schicht kommt **erst bei Bedarf** und über den V
 
 | Ab Phase | Baustein (geplant) | Bibliothek |
 |---|---|---|
-| 5 | Status-Overlay-Inhalte (state/stance/gait/tempo/foot/safety); Dropdowns; 3D-Viz; Config/Alerts/Show-Inhalte | OkHttp (Status-Topic/Params) |
+| (offen) | **Show-Posen-Panel** — der `show`-Slot öffnet noch ein leeres Panel (Show-Toggle/`cmd_show`); nicht im P5-Scope | — |
 | Upgrade | Video-Latenz: RTSP/H.264 oder WebRTC (löst MJPEG ab) | **Media3/ExoPlayer** (dafür reserviert) |
-| 4+ | Verbindungs-/Foreground-Service (Netz-Lifecycle) | — |
-| 8 | Controller-Profil (JSON) statt fester Kishi-Abbildung [D8]; Auto-Reconnect | — |
+| 4+ | Verbindungs-/Foreground-Service (Netz-Lifecycle) — HMI-Subs sind seit Phase 5 an den Vordergrund gekoppelt (B4), ein Service würde das formalisieren | — |
+| 6 | E-Stop scharf + Recovery (`safety_freeze`/`safety_reset` + Recovery-Service) | — |
+| 8 | Controller-Profil (JSON) statt fester Kishi-Abbildung [D8]; Auto-Reconnect; ViewModel/SavedState (Activity ist mit Phase 5 groß geworden) | — |
+
+> **Phase 5 ist umgesetzt (Ist-Zustand §4.5)** — die frühere „geplant"-Zeile dazu ist entfernt.
 
 > Neue Topics/Services/Felder werden **nicht hier erfunden**: Ist etwas im Contract noch
 > `[TBD-Phase N]`, geht es als offener Punkt an die ROS/Contract-Session zurück ([D9]).

@@ -86,11 +86,13 @@ fun rosbridgeCallServiceArgs(id: String, service: String, args: JSONObject): Str
  * damit der gelatchte Wert beim (späten) Subscribe ankommt; [depth] = Queue-Tiefe (Alerts: 50).
  * [latched]=false → rosbridge-Default-QoS (nicht-latched: status/foot_contacts/joint_states).
  */
-fun rosbridgeSubscribe(topic: String, type: String, latched: Boolean, depth: Int = 1): String {
+fun rosbridgeSubscribe(topic: String, type: String, latched: Boolean, depth: Int = 1, queueLength: Int? = null): String {
     val frame = JSONObject()
         .put("op", "subscribe")
         .put("topic", topic)
         .put("type", type)
+    // queue_length:1 -> rosbridge hält nur den neuesten Frame (kein Backlog) => weniger Latenz bei High-Rate.
+    if (queueLength != null) frame.put("queue_length", queueLength)
     if (latched) {
         frame.put(
             "qos",

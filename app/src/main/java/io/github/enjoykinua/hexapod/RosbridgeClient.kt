@@ -151,9 +151,16 @@ class RosbridgeClient(
      * (Contract §7.4, für die gelatchten Topics); [depth] = Queue-Tiefe (Alerts: 50). Der Handler
      * wird auch registriert, wenn (noch) nicht offen — der Aufrufer subscribt bei CONNECTED.
      */
-    fun subscribe(topic: String, type: String, latched: Boolean, depth: Int = 1, onMsg: (JSONObject) -> Unit) {
+    fun subscribe(
+        topic: String,
+        type: String,
+        latched: Boolean,
+        depth: Int = 1,
+        queueLength: Int? = null,
+        onMsg: (JSONObject) -> Unit,
+    ) {
         topicHandlers[topic] = onMsg
-        if (isOpen) socket?.send(rosbridgeSubscribe(topic, type, latched, depth))
+        if (isOpen) socket?.send(rosbridgeSubscribe(topic, type, latched, depth, queueLength))
     }
 
     /** Eine Topic-Subscription lösen. */
