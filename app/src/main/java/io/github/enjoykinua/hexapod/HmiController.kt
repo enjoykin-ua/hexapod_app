@@ -1,6 +1,7 @@
 package io.github.enjoykinua.hexapod
 
 import android.os.Handler
+import android.util.Log
 
 /**
  * Framework-leichter **HMI-Orchestrator** (Phase 5): kapselt die rosbridge-Subscriptions, das
@@ -62,6 +63,12 @@ class HmiController(
         ros.subscribe("/hexapod/alerts", "std_msgs/msg/String", latched = true, depth = ALERTS_CAP) { msg ->
             parseAlert(msg)?.let { a -> mainHandler.post { hmi.alerts = appendAlert(hmi.alerts, a) } }
         }
+        // Phase 7A: Auto-Sound-Mute (latched Bool, kommt sobald der On-Demand-Stack läuft).
+        ros.subscribe(SOUND_ENABLED_TOPIC, "std_msgs/msg/Bool", latched = true) { msg ->
+            parseBoolData(msg)?.let { b -> mainHandler.post { hmi.soundEnabled = b } }
+        }
+        // Phase 7A: Soundboard-Publisher früh advertisen, damit der erste Tap zuverlässig ankommt.
+        ros.advertise(PLAY_SOUND_TOPIC, "std_msgs/msg/String")
     }
 
     /** Die HMI-Topics abbestellen (Hintergrund/onPause). Der Socket bleibt offen (Reconnect billig). */
@@ -153,6 +160,38 @@ class HmiController(
         ) { /* standing-gated -> Erfolg erwartet; Status-Topic spiegelt den neuen gait. */ }
     }
 
+    // --- Phase 7A: Audio (Auto-Sound-Mute + Soundboard) ---
+
+    /**
+     * Auto-Bewegungs-Sounds an/aus (`sound_enable` BOOL auf `/hexapod_audio`). Fire-and-forget — die
+     * Toggle-Anzeige folgt dem latched `/hexapod/sound_enabled`, **nicht** dieser Response (§6b-Pflicht 2).
+     */
+    fun setSoundEnable(on: Boolean) {
+        ros.callServiceArgs(
+            "$AUDIO_NODE/set_parameters",
+            setParametersArgs(listOf(SOUND_ENABLE_PARAM to ParamValue.BoolV(on))),
+        ) { /* Anzeige aus dem Topic, nicht aus der Response */ }
+    }
+
+    /** Soundboard-Key publishen (spielt immer). Advertise ist idempotent (früh in [startSubscriptions] gesetzt). */
+    fun playSound(key: String) {
+        ros.advertise(PLAY_SOUND_TOPIC, "std_msgs/msg/String")
+        ros.publish(rosbridgePublishString(PLAY_SOUND_TOPIC, key))
+    }
+
+    // --- Phase 7B: camera_enable (rpicam an/aus, nur HW — s. MainActivity-Gate) ---
+
+    /**
+     * rpicam-Subprozess an/aus (`camera_enable` BOOL auf `/hexapod_camera`). Fire-and-forget; ein
+     * Fehlschlag (Node fehlt, z. B. versehentlich in Sim) wird nur geloggt — Video hängt nicht daran.
+     */
+    fun setCameraEnable(on: Boolean) {
+        ros.callServiceArgs(
+            "$CAMERA_NODE/set_parameters",
+            setParametersArgs(listOf(CAMERA_ENABLE_PARAM to ParamValue.BoolV(on))),
+        ) { raw -> if (!raw.result) Log.w(TAG, "camera_enable=$on fehlgeschlagen: ${raw.error}") }
+    }
+
     // --- cycle-to-target (Stance/Tempo) ---
 
     /** Dropdown-Auswahl (stance/tempo): Ziel-Index setzen und den ersten Schritt feuern. */
@@ -218,12 +257,14 @@ class HmiController(
     }
 
     companion object {
+        private const val TAG = "HmiController"
         private const val JOY_NODE = "/joy_to_twist"   // Host der Tempo-Scale-Params (§4.1-Reload)
         private const val CYCLE_STEP_CAP = 6           // max Cycle-Schritte (Backstop; 3-4 Presets)
         private const val CYCLE_TIMEOUT_MS = 4_000L    // Cycle abbrechen, wenn kein Fortschritt
         private val HMI_TOPICS = listOf(
             "/hexapod/status", "/hexapod/tempo", "/foot_contacts",
             "/hexapod/config_manifest", "/hexapod/capabilities", "/hexapod/alerts",
+            SOUND_ENABLED_TOPIC,   // Phase 7A
         )
     }
 }

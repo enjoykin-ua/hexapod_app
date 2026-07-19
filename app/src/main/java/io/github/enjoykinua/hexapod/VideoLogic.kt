@@ -22,15 +22,54 @@ enum class CenterView { NOTHING, KAMERA, ROBOT3D }
 /** Port des Video-Stream-Servers (`web_video_server`); getrennt von rosbridge (9090). Contract §5. */
 private const val VIDEO_PORT = 8080
 
-/** Image-Topic + Kodierung der rohen MJPEG-URL (Contract §5, live gegen den Server verifiziert). */
-private const val VIDEO_STREAM_PATH = "/stream?topic=/camera/image_raw&type=mjpeg"
+/** Topic-Basis der Stream-URL (Sim = roh, HW = /compressed durch web_video_server). Contract §5. */
+private const val VIDEO_TOPIC = "/camera/image_raw"
 
 /**
- * Rohe MJPEG-URL aus dem Host ableiten: **gleiche IP wie rosbridge, nur Port 8080** (Contract
- * §0/§5). `host` ist der bereits eingegebene rosbridge-Host (ohne Schema/Port).
+ * Verbindungs-Kontext (Phase 7B): steuert den Stream-`type` (§5 Variante A) und `camera_enable`
+ * (nur HW). Manueller Sim/HW-Schalter im Verbinden-Screen (User-Entscheidung F2), Default [SIM].
  */
-fun videoStreamUrl(host: String): String =
-    "http://${host.trim()}:$VIDEO_PORT$VIDEO_STREAM_PATH"
+enum class ConnMode { SIM, HW }
+
+/**
+ * Stream-`type` je Modus (Contract §5 Variante A): **Sim = `mjpeg`** (rohes Bild, Gazebo),
+ * **HW = `ros_compressed`** (web_video_server reicht die rpicam-JPEGs durch → kein Pi-Decode).
+ */
+fun streamType(mode: ConnMode): String = when (mode) {
+    ConnMode.SIM -> "mjpeg"
+    ConnMode.HW -> "ros_compressed"
+}
+
+/**
+ * Bandbreiten-Drossel (Latenz-Fix, `web_video_server`-Query-Params): etwas kleineres Bild
+ * (1120×630 = 16:9, ~¾ der 720p-Pixel — nur um ¼ reduziert, gegen zu starke Pixeligkeit) + moderate
+ * JPEG-Qualität (70) = weniger WLAN-Last, aber schärfer als der erste Wurf (640×360/q50). **Nur für
+ * `mjpeg`** (Server re-encodet neu); bei `ros_compressed` (HW) werden die Quell-JPEGs **durchgereicht**
+ * (kein Pi-Decode, Contract §5) → ein Downscale dort erzwänge genau diesen Decode. Auflösung auf HW =
+ * rpicam-Quelle (ROS-Seite). Der [MjpegStream]-Frame-Drop hält die Latenz auch bei mehr Bandbreite niedrig.
+ */
+private const val VIDEO_MJPEG_TUNING = "&quality=70&width=1120&height=630"
+
+/**
+ * Rohe MJPEG-URL aus Host + [type] ableiten: **gleiche IP wie rosbridge, nur Port 8080** (Contract
+ * §0/§5). `host` ist der bereits eingegebene rosbridge-Host (ohne Schema/Port); [type] aus [streamType].
+ * Für `mjpeg` wird [VIDEO_MJPEG_TUNING] angehängt (Bandbreite/Latenz).
+ */
+fun videoStreamUrl(host: String, type: String): String {
+    val base = "http://${host.trim()}:$VIDEO_PORT/stream?topic=$VIDEO_TOPIC&type=$type"
+    return if (type == "mjpeg") base + VIDEO_MJPEG_TUNING else base
+}
+
+/** Node/Param für `camera_enable` (rpicam-Subprozess an/aus, Strom/Wärme). Contract §5/§6. */
+const val CAMERA_NODE = "/hexapod_camera"
+const val CAMERA_ENABLE_PARAM = "camera_enable"
+
+/**
+ * Soll die Kamera (rpicam) an sein? Folgt dem Stream-Gate ([shouldStream]), aber **nur auf HW** —
+ * in Sim gibt es den `/hexapod_camera`-Node nicht (Gazebo-Kamera) → dort nie setzen. Contract §5/§6.
+ */
+fun wantCameraEnable(mode: ConnMode, streamWanted: Boolean): Boolean =
+    mode == ConnMode.HW && streamWanted
 
 /**
  * cam-Toggle (Slot 📷): schaltet zwischen [CenterView.KAMERA] und [CenterView.NOTHING]

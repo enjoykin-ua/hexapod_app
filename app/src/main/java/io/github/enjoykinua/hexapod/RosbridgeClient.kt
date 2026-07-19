@@ -57,6 +57,9 @@ class RosbridgeClient(
     /** Aktive Topic-Subscriptions (topic → Handler auf das rosbridge-`msg`-Objekt). Phase 5. */
     private val topicHandlers = ConcurrentHashMap<String, (JSONObject) -> Unit>()
 
+    /** Idempotent advertiste Topics (Phase 7A: /hexapod/play_sound). Bei [reset] geleert → Reconnect re-advertised. */
+    private val advertised = ConcurrentHashMap.newKeySet<String>()
+
     fun connect(host: String, port: Int = DEFAULT_PORT) {
         if (socket != null) return   // schon verbunden/verbindend
         onState(ConnState.CONNECTING, null)
@@ -112,6 +115,16 @@ class RosbridgeClient(
     /** Sendet einen fertigen publish-Frame; no-op, solange nicht [ready]. */
     fun publish(json: String) {
         if (ready) socket?.send(json)
+    }
+
+    /**
+     * Ein Topic **idempotent** advertisen (Phase 7A: `/hexapod/play_sound`). Nur wenn offen; der Frame
+     * wird pro Verbindung genau **einmal** gesendet ([advertised]-Set), damit der Publisher früh
+     * registriert ist (Discovery zum späteren `hexapod_audio` läuft, bevor der erste Sound getappt wird).
+     */
+    fun advertise(topic: String, type: String) {
+        if (!isOpen) return
+        if (advertised.add(topic)) socket?.send(rosbridgeAdvertise(topic, type))
     }
 
     /**
@@ -195,6 +208,8 @@ class RosbridgeClient(
         }
         // Subscriptions verwerfen — der Aufrufer subscribt bei erneutem CONNECT neu.
         topicHandlers.clear()
+        // Advertises verwerfen — beim nächsten Connect wird bei Bedarf neu advertised.
+        advertised.clear()
     }
 
     companion object {

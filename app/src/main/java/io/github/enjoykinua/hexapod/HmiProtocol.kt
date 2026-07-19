@@ -219,6 +219,9 @@ fun parseAlert(msg: JSONObject): Alert? {
 /** `std_srvs/SetBool`-Args: `{data:bool}` (cycle_stance/cycle_tempo, `true`=höher/schneller). */
 fun setBoolArgs(data: Boolean): JSONObject = JSONObject().put("data", data)
 
+/** `std_msgs/Bool`-`msg` → Boolean (Phase 7A: `/hexapod/sound_enabled`, latched); `null` wenn Feld fehlt. */
+fun parseBoolData(msg: JSONObject): Boolean? = if (msg.has("data")) msg.optBoolean("data") else null
+
 // --- P5.13: /joint_states (3D-Viz) ---
 
 /** `/joint_states` (`sensor_msgs/JointState`) → Map `joint-name → position` [rad] (Reihenfolge parallel). */

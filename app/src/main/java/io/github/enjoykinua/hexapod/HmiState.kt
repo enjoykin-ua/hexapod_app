@@ -45,6 +45,9 @@ class HmiState {
     /** Joint-Winkel [rad] aus `/joint_states` (3D-Viz; nur abonniert während die 3D-Ansicht aktiv ist). */
     var jointPositions by mutableStateOf<Map<String, Double>>(emptyMap())
 
+    /** Auto-Sound-Mute aus `/hexapod/sound_enabled` (latched Bool; `null` = noch keiner / Stack aus). Phase 7A. */
+    var soundEnabled by mutableStateOf<Boolean?>(null)
+
     /**
      * Stack-gebundene Live-Daten invalidieren — status/tempo/foot **und** die Param-Werte/-Fehler
      * (aus den Stack-Nodes), z. B. wenn der Stack stoppt. Das **Manifest** (Always-On) bleibt →
@@ -59,6 +62,7 @@ class HmiState {
         cyclingStance = false
         cyclingTempo = false
         jointPositions = emptyMap()
+        soundEnabled = null   // latched aus dem On-Demand-Stack (hexapod_audio) → mit dem Stack ungültig
     }
 
     /** Bei Verbindungsabbruch: alle Live-Daten invalidieren (inkl. Always-On-Manifest/Capabilities/Alerts). */

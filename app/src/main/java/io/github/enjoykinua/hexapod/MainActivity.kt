@@ -53,6 +53,7 @@ class MainActivity : ComponentActivity() {
     private var screen by mutableStateOf(Screen.LIFECYCLE)
     private var isResumed = false
     private var videoRetries = 0
+    private var lastCameraEnable: Boolean? = null   // Phase 7B: zuletzt gesetztes camera_enable (nur HW; kein Spam)
 
     private val deviceListener = object : InputManager.InputDeviceListener {
         override fun onInputDeviceAdded(deviceId: Int) = refreshDevices()
@@ -141,6 +142,8 @@ class MainActivity : ComponentActivity() {
                             onClearAlerts = { hmi.alerts = emptyList() },
                             onEstop = { callSafety(ESTOP_SERVICE) },
                             onRecover = { callSafety(RECOVER_SERVICE) },
+                            onToggleSound = { hmiController.setSoundEnable(!(hmi.soundEnabled ?: false)) },
+                            onPlaySound = { key -> hmiController.playSound(key) },
                             contentPadding = innerPadding,
                         )
                     }
@@ -244,11 +247,22 @@ class MainActivity : ComponentActivity() {
             videoRetries = 0
             videoState.error = null
             videoState.streaming = true
-            video.start(videoStreamUrl(connection.host))
+            video.start(videoStreamUrl(connection.host, streamType(connection.mode)))
         } else if (!want && videoState.streaming) {
             videoState.streaming = false
             videoState.frame = null
             video.stop()
+        }
+        // Phase 7B: camera_enable (rpicam) an dasselbe want-Signal koppeln — NUR HW (Node existiert nur
+        // dort) + nur bei laufendem Stack + nur bei Änderung (kein set_parameters-Spam pro syncVideo).
+        if (connection.mode == ConnMode.HW && lifecycleState.stack == StackState.RUNNING) {
+            val camEnable = wantCameraEnable(connection.mode, want)
+            if (camEnable != lastCameraEnable) {
+                lastCameraEnable = camEnable
+                hmiController.setCameraEnable(camEnable)
+            }
+        } else {
+            lastCameraEnable = null
         }
         // 3D-Viz-Subscription am selben Gate: /joint_states nur wenn die 3D-Ansicht aktiv sichtbar ist.
         hmiController.syncJointStates(

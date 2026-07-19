@@ -180,6 +180,7 @@ Sticks/Tasten fahren den Roboter, der Handy-Screen zeigt Video-Vollbild + Overla
 | `docs/phase_4_video_shell_plan.md` | Phase-4-App-Plan: Fahr-Screen-Shell + Vollbild-Video (eigener OkHttp-MJPEG-Decoder, Center-Toggle, Slot-Vertrag §5, ADRs, Tests, Done-Vertrag) |
 | `docs/phase_5_status_config_plan.md` | Phase-5-App-Plan: Overlay-Live-Daten + generisches Config-Panel + Dropdowns + Alerts + 3D-Viz (ADRs, Tests, Done-Vertrag) |
 | `docs/phase_6_estop_recovery_plan.md` | Phase-6-App-Plan: E-Stop scharf + Recover + frozen-Anzeige (SafetyLogic, Banner, ADRs, Tests, Self-Review, Done-Vertrag) |
+| `docs/phase_7_audio_video_plan.md` | Phase-7-App-Plan: Audio (Toggle + Soundboard) + Video-`type` je Host (Sim/HW-Schalter, camera_enable an Ansicht gekoppelt) (AudioLogic, ADRs, Tests, Self-Review, Done-Vertrag) |
 
 **Roboter-Seite (read-only, `~/hexapod_ws/project_finalization/app_control_requirements/`):**
 `00_overview.md` · `requirements.md` · `decisions.md` · **`interface_contract.md` (Interface, SoT)** ·
@@ -191,10 +192,13 @@ Sticks/Tasten fahren den Roboter, der Handy-Screen zeigt Video-Vollbild + Overla
 > **nicht im Chat** (D9/D10: Kopplung über den versionierten Contract/Plan, nicht mündlich).
 > Phase 1 (Hello-World) war app-lokal (`docs/phase_1_stage_b_brief.md`); **ab Phase 2** =
 > hexapod_ws-Phasenplan.
-> **Aktuell: Phase 6** — E-Stop scharf + Recover + frozen-Anzeige. App-Code fertig & grün
-> (P6.8/P6.9, `testDebugUnitTest` **85/0**, +6 `SafetyLogicTest`); **offen: P6.11-Sim** (E2E gegen
-> Sim-Stack mit User) + HW-**T6.8**. Plan: `docs/phase_6_estop_recovery_plan.md` + Interface
-> `interface_contract.md` **v0.10 §2/§6a** (`/hexapod_estop` + `/hexapod_recover`, beide `std_srvs/Trigger`;
-> frozen aus `/hexapod/status.safety_frozen`). Beides über den bestehenden `call_service`-Trigger-Pfad —
-> kein neues Interface/Transport. E-Stop-Ziel ist `/hexapod_estop` (NICHT `/hexapod_safety_freeze`).
-> (Phase 5 Status/Config = erledigt & grün; Phase 4 Video/Shell, Phase 3 Lifecycle, Phase 2 `/joy` = erledigt.)
+> **Aktuell: Phase 7A/7B** — Audio + Video-`type` je Host. App-Code fertig & grün
+> (P7.1–P7.8, `testDebugUnitTest` **89/0**, +2 `AudioLogicTest` +2 `VideoLogicTest`); **offen: P7.9-Sim**
+> (E2E gegen Sim-Stack mit User) + HW (Ton/rpicam). Plan: `docs/phase_7_audio_video_plan.md` + Interface
+> `interface_contract.md` **v0.12.1 §5/§6b**. Audio: `/hexapod/play_sound` (Soundboard, spielt immer),
+> `/hexapod/sound_enabled` (latched Toggle-Anzeige), Param `sound_enable` auf `/hexapod_audio` — **ein**
+> An/Aus-Toggle + „Fahren →" bleibt einzeln (User-Entscheidung, NICHT der „mit/ohne Audio"-Doppelbutton
+> des 7A-Briefs). Video: Sim/HW-Schalter → `type=mjpeg`/`ros_compressed`; `camera_enable` an die
+> Center-Ansicht gekoppelt (nur HW). Alles über bestehenden Transport (rosbridge advertise/publish +
+> `set_parameters`; Video-URL nur mit `type`) — kein neues Interface.
+> (Phase 6 E-Stop/Recover, Phase 5 Status/Config, Phase 4 Video/Shell, Phase 3 Lifecycle, Phase 2 `/joy` = erledigt.)

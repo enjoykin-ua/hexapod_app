@@ -28,6 +28,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -96,13 +97,13 @@ private fun ConnectBar(
             fontWeight = FontWeight.Bold,
             style = MaterialTheme.typography.titleMedium
         )
+        // Beim Verbinden/Verbunden Feld + Modus sperren (ändern sich nicht mitten in der Verbindung).
+        val busy = connection.state == ConnState.CONNECTED || connection.state == ConnState.CONNECTING
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Beim Verbinden/Verbunden das Feld sperren (Host ändert sich nicht mitten drin).
-            val busy = connection.state == ConnState.CONNECTED || connection.state == ConnState.CONNECTING
             OutlinedTextField(
                 value = connection.host,
                 onValueChange = { connection.host = it },
@@ -119,8 +120,55 @@ private fun ConnectBar(
                 Text(if (busy) "Trennen" else "Verbinden")
             }
         }
+        // Phase 7B: Sim/HW-Modus → Video-`type` (mjpeg / ros_compressed) + camera_enable (nur HW).
+        ModeSwitch(connection.mode, enabled = !busy) { connection.mode = it }
         StatusLine(connection)
     }
+}
+
+/**
+ * Sim/HW-Umschalter (Phase 7B): koppelt den Video-`type` (Sim=`mjpeg` / HW=`ros_compressed`) und die
+ * `camera_enable`-Steuerung. Nur änderbar, solange nicht verbunden — der Modus gehört zum Kontext.
+ */
+@Composable
+private fun ModeSwitch(mode: ConnMode, enabled: Boolean, onSet: (ConnMode) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text("Modus:", style = MaterialTheme.typography.bodyMedium)
+        Row(Modifier.clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface)) {
+            ModeSeg("Sim", mode == ConnMode.SIM, enabled) { onSet(ConnMode.SIM) }
+            ModeSeg("HW", mode == ConnMode.HW, enabled) { onSet(ConnMode.HW) }
+        }
+        Text(
+            "Video: " + streamType(mode),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun ModeSeg(label: String, selected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val bg = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+    val fg = when {
+        !enabled -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+        selected -> MaterialTheme.colorScheme.onPrimary
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Text(
+        label,
+        color = fg,
+        fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(bg)
+            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+    )
 }
 
 @Composable

@@ -12,20 +12,36 @@ import org.junit.Test
  */
 class VideoLogicTest {
 
-    // --- videoStreamUrl (Contract §0/§5: gleiche IP, Port 8080, rohe MJPEG-URL) ---
+    // --- videoStreamUrl (Contract §0/§5: gleiche IP, Port 8080, type je Modus) ---
 
-    @Test fun url_has_port_8080_topic_and_type() {
+    @Test fun mjpeg_url_has_bandwidth_tuning() {
+        // mjpeg: Server re-encodet → Downscale/Quality anhängen (~¾ der Pixel, q70).
         assertEquals(
-            "http://192.168.1.5:8080/stream?topic=/camera/image_raw&type=mjpeg",
-            videoStreamUrl("192.168.1.5"),
+            "http://192.168.1.5:8080/stream?topic=/camera/image_raw&type=mjpeg&quality=70&width=1120&height=630",
+            videoStreamUrl("192.168.1.5", "mjpeg"),
         )
     }
 
-    @Test fun url_trims_host() {
+    @Test fun ros_compressed_url_stays_plain_and_trims_host() {
+        // ros_compressed: Quell-JPEGs durchgereicht (kein Pi-Decode) → KEIN Downscale-Param.
         assertEquals(
-            "http://10.0.0.9:8080/stream?topic=/camera/image_raw&type=mjpeg",
-            videoStreamUrl("  10.0.0.9  "),
+            "http://10.0.0.9:8080/stream?topic=/camera/image_raw&type=ros_compressed",
+            videoStreamUrl("  10.0.0.9  ", "ros_compressed"),
         )
+    }
+
+    // --- streamType / wantCameraEnable (Phase 7B Variante A) ---
+
+    @Test fun stream_type_per_mode() {
+        assertEquals("mjpeg", streamType(ConnMode.SIM))
+        assertEquals("ros_compressed", streamType(ConnMode.HW))
+    }
+
+    @Test fun camera_enable_only_on_hw_and_when_stream_wanted() {
+        assertTrue(wantCameraEnable(ConnMode.HW, streamWanted = true))
+        assertFalse(wantCameraEnable(ConnMode.HW, streamWanted = false))
+        assertFalse(wantCameraEnable(ConnMode.SIM, streamWanted = true))
+        assertFalse(wantCameraEnable(ConnMode.SIM, streamWanted = false))
     }
 
     // --- toggleCam (Plan-[ADR-6]: centerView = einzige Wahrheit) ---

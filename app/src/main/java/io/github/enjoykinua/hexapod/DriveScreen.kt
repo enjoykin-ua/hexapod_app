@@ -71,6 +71,8 @@ fun DriveScreen(
     onClearAlerts: () -> Unit,
     onEstop: () -> Unit,
     onRecover: () -> Unit,
+    onToggleSound: () -> Unit,
+    onPlaySound: (String) -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -104,6 +106,16 @@ fun DriveScreen(
         ) {
             TopBar(connection, lifecycle, hmi.status, video.centerView, onBack, onSetCenter) { openPanel = it }
             BottomBar(hmi, safety, video.centerView == CenterView.KAMERA, onToggleCam, onEstop, onSetGait, onSetStanceTarget, onSetTempoTarget)
+        }
+
+        // --- Audio-Spalte (P7.6, rechts mittig) — nur bei laufendem Stack (Node /hexapod_audio existiert sonst nicht) ---
+        if (running) {
+            AudioColumn(
+                modifier = Modifier.align(Alignment.CenterEnd).padding(contentPadding).padding(8.dp),
+                soundOn = hmi.soundEnabled,
+                onToggle = onToggleSound,
+                onPlay = onPlaySound,
+            )
         }
 
         // --- Overlay-Panels: config gefüllt (P5.11); alerts/show noch Platzhalter (P5.12) ---
@@ -391,6 +403,61 @@ private fun CamToggle(on: Boolean, onClick: () -> Unit) {
         modifier = Modifier
             .clip(RoundedCornerShape(6.dp))
             .background(bg)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    )
+}
+
+// --- Ebene 1: Audio-Spalte (P7.6, rechter Rand) ---
+
+/**
+ * Rechte Audio-Spalte (Phase 7A): **ein** An/Aus-Toggle (spiegelt `/hexapod/sound_enabled`, nicht den
+ * Tap — §6b) + 3 Soundboard-Buttons ([SOUNDBOARD], spielen immer). Wird nur gerendert, solange der
+ * Stack läuft (Aufrufer-Gate) — vorher gibt es `/hexapod_audio` nicht.
+ */
+@Composable
+private fun AudioColumn(modifier: Modifier, soundOn: Boolean?, onToggle: () -> Unit, onPlay: (String) -> Unit) {
+    Column(
+        modifier.clip(RoundedCornerShape(8.dp)).background(SCRIM).padding(6.dp),
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        AudioToggle(soundOn, onToggle)
+        for (s in SOUNDBOARD) SoundboardButton(s.label) { onPlay(s.key) }
+    }
+}
+
+/** Auto-Sound-Mute-Toggle: grün „AN" / grau „AUS" nach [soundOn]; `null` (noch kein latched Wert) → „…", disabled. */
+@Composable
+private fun AudioToggle(soundOn: Boolean?, onToggle: () -> Unit) {
+    val label = when (soundOn) {
+        true -> "🔊 Sound AN"
+        false -> "🔇 Sound AUS"
+        null -> "🔊 …"
+    }
+    Text(
+        label,
+        color = if (soundOn == null) PLACEHOLDER else Color.White,
+        fontWeight = FontWeight.Bold,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (soundOn == true) FOOT_CONTACT_GREEN else SCRIM)
+            .then(if (soundOn != null) Modifier.clickable(onClick = onToggle) else Modifier)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    )
+}
+
+/** Ein Soundboard-Button — publisht immer (unabhängig vom Mute-Toggle). */
+@Composable
+private fun SoundboardButton(label: String, onClick: () -> Unit) {
+    Text(
+        label,
+        color = Color.White,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(SCRIM)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
     )

@@ -153,22 +153,31 @@ geparst → `Bitmap` → Compose (`ContentScale.Crop`).
 |---|---|
 | `VideoLogic.kt` | **reine** Helfer: `Screen`/`CenterView`-Enums, `videoStreamUrl(host)` (Port 8080, Contract §5), `toggleCam`, `shouldStream`, `extractBoundary` — unit-getestet |
 | `MjpegParser.kt` | **reiner** `parseMjpegStream(InputStream)`: Content-Length-Fast-Path + Boundary-Scan-Fallback + Split-Read-fest + Hint-Selbstkorrektur — unit-getestet (kein Android) |
-| `MjpegStream.kt` | OkHttp-GET (`readTimeout 0`) + `BitmapFactory` → auf Main gepostet; start/stop-Lifecycle + Fehlerbild/Auto-Retry (Glue, integrationsverifiziert) |
+| `MjpegStream.kt` | OkHttp-GET (`readTimeout 0`), **Frame-Drop** (Reader leert den Socket → Single-Slot; Decoder dekodiert nur das **neueste** JPEG → Main) gegen Buffer-Bloat/Latenz; start/stop-Lifecycle + Fehlerbild/Auto-Retry (Glue, integrationsverifiziert) |
 | `VideoState.kt` | Compose-Snapshot-Halter (centerView, frame, streaming, error) |
 | `DriveScreen.kt` | Fahr-Screen: Center-View (Ebene 0) + Overlay-Slots §5 (Ebene 1) + leere config/alerts/show-Panels |
 | `MainActivity.kt` (erweitert) | Screen-State + `syncVideo()`-Gate (an `StackState.RUNNING` gekoppelt, Contract §5) + Betreten-Poll; hält `MjpegStream` |
 | `ConnectionState.kt` (erweitert) | `host` hochgezogen (Fahr-Screen leitet die Video-URL daraus ab) |
 
-**Datenfluss (Video-Pfad, Phase 4):**
+**Datenfluss (Video-Pfad, Phase 4 + Frame-Drop-Fix):**
 ```
-web_video_server (host:8080, MJPEG) ─ws/http─► MjpegStream (OkHttp GET, BG-Thread)
-   └─ parseMjpegStream ─► JPEG-Bytes ─► BitmapFactory ─(Main)─► VideoState.frame
+web_video_server (host:8080, MJPEG) ─ws/http─► MjpegStream
+   Reader-Thread: parseMjpegStream ─► JPEG-Bytes ─► pending (Single-Slot, überschreibt = Drop)
+   Decoder-Thread: neuestes JPEG ─► BitmapFactory ─(Main)─► VideoState.frame
                                                                     │ liest
                                                                     ▼
                                        DriveScreen · CenterPane (ContentScale.Crop, Vollbild)
 ```
+**Frame-Drop (Latenz-Fix):** Der Reader leert den Socket so schnell wie möglich und hält nur die
+**letzten** JPEG-Bytes (kein Queue-/Puffer-Rückstau); der Decoder dekodiert stets nur das **neueste**
+Frame → Zwischenframes fallen weg → Video-Latenz am Handy bleibt niedrig statt (wie zuvor) über WLAN auf
+10–15 s anzuwachsen. Zusätzlich: `videoStreamUrl` drosselt für `mjpeg` (Sim) via
+`&quality=70&width=1120&height=630` (~¾ der 720p-Pixel) die Bandbreite (bei `ros_compressed`/HW nicht —
+dort Quell-JPEGs durchgereicht, Auflösung = rpicam).
+
 Gate: Stream nur bei `verbunden && StackState.RUNNING && Fahr-Screen && Center=Kamera && Vordergrund`
-(`shouldStream`, rein). onPause/Back/Toggle-weg → `MjpegStream.stop()`.
+(`shouldStream`, rein). onPause/Back/Toggle-weg → `MjpegStream.stop()` (schließt die Session sauber →
+nie zwei parallele Streams).
 
 ### 4.5 Ist-Zustand (Phase 5 — Status-Overlay + Config-Panel + Dropdowns + 3D-Viz)
 
@@ -237,6 +246,29 @@ Contract §6a). `RECOVERING` nur nach bewusstem Recover-Tap (`recoverRequested`-
 kein Fehl-„recovering" beim normalen Stand-up (der auch `STARTUP_RAMP` durchläuft). Der Banner ist
 **ausgeblendet, solange ein Overlay-Panel (config/alerts) offen ist**, und erscheint beim Schließen
 wieder (solange noch frozen). **Offen:** Sim-E2E (P6.11-Sim) + HW-T6.8.
+
+### 4.7 Ist-Zustand (Phase 7A/7B — Audio + Video-`type` je Host)
+
+Zwei Nähte über den **bestehenden** rosbridge-Transport (Audio) bzw. den vorhandenen Video-Kanal
+(kein neuer Transport). Interface = `interface_contract.md` **v0.12.1 §5/§6b**. Details/ADRs:
+[`phase_7_audio_video_plan.md`](phase_7_audio_video_plan.md).
+
+| Datei | Rolle |
+|---|---|
+| `AudioLogic.kt` (neu) | **reine** Konstanten (Topic/Param/Node) + `SOUNDBOARD` (3× `SoundButton`) — unit-getestet (`AudioLogicTest`) |
+| `VideoLogic.kt` (erw.) | `ConnMode {SIM,HW}`, `streamType(mode)`, `videoStreamUrl(host,type)`, `wantCameraEnable(mode,streamWanted)`, Kamera-Node/Param — unit-getestet |
+| `RosbridgeProtocol.kt` / `RosbridgeClient.kt` (erw.) | generisches `advertise`/`unadvertise`/`publishString`; idempotentes `advertise` (Set, bei `reset` geleert); `parseBoolData` |
+| `HmiController.kt` (erw.) | Subscribe `/hexapod/sound_enabled` (latched Bool) + `advertise` play_sound; `setSoundEnable`/`playSound`/`setCameraEnable` |
+| `ControlScreen.kt` (erw.) | **Sim/HW-Schalter** in der Connect-Bar (nur getrennt änderbar); „Fahren →" bleibt einzeln |
+| `DriveScreen.kt` (erw.) | rechte **Audio-Spalte** (ein An/Aus-Toggle + Sound 1/2/3), nur bei `RUNNING` |
+| `MainActivity.kt` (erw.) | Video-URL mit `streamType(mode)`; `syncVideo` koppelt `camera_enable` (HW, nur bei Änderung); Audio-Callbacks |
+
+**Audio:** Der Toggle spiegelt **latched** `/hexapod/sound_enabled` (nicht die Set-Response, §6b), mutet
+**nur** Auto-Bewegungs-Sounds; die 3 Soundboard-Keys (`/hexapod/play_sound`) spielen **immer**. Controls
+nur bei laufendem Stack (Node `/hexapod_audio` existiert sonst nicht). **Video-`type` (Variante A):**
+manueller Sim/HW-Schalter → `mjpeg` bzw. `ros_compressed` (die **einzige** App-Änderung fürs echte
+Kamerabild). **`camera_enable`** folgt der Center-Ansicht (Video→an, None/3D→aus) am vorhandenen
+`syncVideo`-Gate — **nur HW** (in Sim kein `/hexapod_camera`). **Offen:** Sim-E2E (P7.9) + HW (Ton/rpicam).
 
 ### 4.4 Geplante Erweiterung (Richtung, keine Festlegung)
 

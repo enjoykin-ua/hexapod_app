@@ -81,6 +81,28 @@ fun rosbridgeCallServiceArgs(id: String, service: String, args: JSONObject): Str
     .put("args", args)
     .toString()
 
+// --- Phase 7A: generisches advertise/publish (Soundboard /hexapod/play_sound) ---
+
+/** Generischer `advertise`-Frame (RELIABLE-Default genügt, Contract §6b). */
+fun rosbridgeAdvertise(topic: String, type: String): String = JSONObject()
+    .put("op", "advertise")
+    .put("topic", topic)
+    .put("type", type)
+    .toString()
+
+/** Generischer `unadvertise`-Frame. */
+fun rosbridgeUnadvertise(topic: String): String = JSONObject()
+    .put("op", "unadvertise")
+    .put("topic", topic)
+    .toString()
+
+/** `publish`-Frame für ein `std_msgs/String` (Phase 7A: Soundboard-Key in `msg.data`). */
+fun rosbridgePublishString(topic: String, data: String): String = JSONObject()
+    .put("op", "publish")
+    .put("topic", topic)
+    .put("msg", JSONObject().put("data", data))
+    .toString()
+
 /**
  * `subscribe`-Frame. [latched]=true → explizites `transient_local`+`reliable`-QoS (Contract §7.4),
  * damit der gelatchte Wert beim (späten) Subscribe ankommt; [depth] = Queue-Tiefe (Alerts: 50).

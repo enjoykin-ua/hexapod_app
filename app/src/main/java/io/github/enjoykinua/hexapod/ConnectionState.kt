@@ -20,6 +20,13 @@ class ConnectionState {
      */
     var host by mutableStateOf("")
 
+    /**
+     * Verbindungs-Modus (Phase 7B): **Sim** (Desktop) → Video `type=mjpeg`, **HW** (Pi) →
+     * `type=ros_compressed` + `camera_enable`-Kopplung. Manueller Schalter im Verbinden-Screen,
+     * nur änderbar, solange nicht verbunden (gehört zum Verbindungs-Kontext). Default [ConnMode.SIM].
+     */
+    var mode by mutableStateOf(ConnMode.SIM)
+
     /** Zuletzt gebaute `/joy`-Nachricht (für die Debug-Anzeige / Vorzeichen-Check). */
     var lastJoy by mutableStateOf<JoyMessage?>(null)
 }
