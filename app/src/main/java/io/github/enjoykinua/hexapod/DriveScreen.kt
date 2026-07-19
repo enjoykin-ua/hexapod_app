@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,17 +37,22 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 
 /**
  * Phase-4-Fahr-Screen (Querformat): **Vollbild-Video** als Center-View (center-crop) + **3-Wege-
  * Center-Toggle** + **Kamera-an/aus** + **alle Overlay-Slots aus §5 positioniert, aber leer/Label**
  * (Vertrag für Phase 5). Navigation Lifecycle ↔ Drive per [onBack]/BackHandler.
  *
- * **Bewusst noch NICHT (Phase 5/6):** Live-Daten in den Slots, Dropdown-Logik, 3D-Viz,
- * Config-/Alerts-/Show-Inhalte, scharfer E-Stop. Hier nur die **positionierte, leere Shell**.
+ * **Phase 6 (P6.8/P6.9):** scharfer **E-STOP** am reservierten Slot → [onEstop] (`/hexapod_estop`);
+ * prominenter **Frozen-Banner** + **Recover**-Button → [onRecover] (`/hexapod_recover`), abgeleitet
+ * aus `hmi.status.safety_frozen` via [safetyMode] (Contract §2/§6a).
+ *
+ * **Bewusst noch NICHT:** Config-/Alerts-/Show-Inhalte teils Platzhalter; Kipp-/Recovery-Automatik.
  *
  * Ebene 0 = Center-View (füllt den Screen, hinter den Systemleisten). Ebene 1 = Overlay
- * (innerhalb der Safe-Insets via [contentPadding]).
+ * (innerhalb der Safe-Insets via [contentPadding]). Ebene 2 = Safety-Banner (über 0/1, aber
+ * **ausgeblendet, solange ein Overlay-Panel offen ist**, damit es dessen Inhalt nicht verdeckt).
  */
 @Composable
 fun DriveScreen(
@@ -62,11 +69,25 @@ fun DriveScreen(
     onSetStanceTarget: (Int) -> Unit,
     onSetTempoTarget: (Int) -> Unit,
     onClearAlerts: () -> Unit,
+    onEstop: () -> Unit,
+    onRecover: () -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
     var openPanel by remember { mutableStateOf<OverlayPanel?>(null) }
     val running = lifecycle.stack == StackState.RUNNING
+
+    // Safety-Anzeige-Modus (P6.9): frozen NUR aus status.safety_frozen; „recovering" nur nach einem
+    // bewussten Recover-Tap ([recoverRequested]) bis STANDING — verhindert Fehl-Anzeige beim
+    // normalen Stand-up (der auch STARTUP_RAMP durchläuft).
+    val frozen = hmi.status?.safetyFrozen == true
+    val state = hmi.status?.state
+    var recoverRequested by remember { mutableStateOf(false) }
+    LaunchedEffect(frozen, state) {
+        // Re-Freeze oder STANDING erreicht → das Recover-Flag zurücksetzen (nächster Recover setzt neu).
+        if (frozen || state == StatusSnapshot.STATE_STANDING) recoverRequested = false
+    }
+    val safety = safetyMode(frozen, state, recoverRequested)
 
     // Zurück: offenes Panel schließen hat Vorrang, sonst zurück zum Lifecycle-Screen.
     BackHandler(enabled = openPanel != null) { openPanel = null }
@@ -82,7 +103,7 @@ fun DriveScreen(
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             TopBar(connection, lifecycle, hmi.status, video.centerView, onBack, onSetCenter) { openPanel = it }
-            BottomBar(hmi, video.centerView == CenterView.KAMERA, onToggleCam, onSetGait, onSetStanceTarget, onSetTempoTarget)
+            BottomBar(hmi, safety, video.centerView == CenterView.KAMERA, onToggleCam, onEstop, onSetGait, onSetStanceTarget, onSetTempoTarget)
         }
 
         // --- Overlay-Panels: config gefüllt (P5.11); alerts/show noch Platzhalter (P5.12) ---
@@ -104,6 +125,13 @@ fun DriveScreen(
                 )
                 else -> OverlayPanelView(panel) { openPanel = null }
             }
+        }
+
+        // --- Ebene 2: Safety-Banner (P6.9) — nur wenn KEIN Overlay-Panel offen ist, sonst würde es
+        // dessen Inhalt (z. B. Alerts) verdecken. Beim Schließen erscheint es wieder, solange noch
+        // frozen/recovering (safety != NORMAL). ---
+        if (openPanel == null) {
+            SafetyBanner(safety) { recoverRequested = true; onRecover() }
         }
     }
 }
@@ -193,8 +221,9 @@ private fun CenterToggle(active: CenterView, onSet: (CenterView) -> Unit) {
     Row(
         Modifier.clip(RoundedCornerShape(8.dp)).background(SCRIM),
     ) {
-        SegItem("Nichts", active == CenterView.NOTHING, enabled = true) { onSet(CenterView.NOTHING) }
-        SegItem("Kamera", active == CenterView.KAMERA, enabled = true) { onSet(CenterView.KAMERA) }
+        // Labels englisch (User-Wunsch); Enum-Namen + restliche UI bleiben unverändert/Deutsch.
+        SegItem("None", active == CenterView.NOTHING, enabled = true) { onSet(CenterView.NOTHING) }
+        SegItem("Video", active == CenterView.KAMERA, enabled = true) { onSet(CenterView.KAMERA) }
         SegItem("3D", active == CenterView.ROBOT3D, enabled = true) { onSet(CenterView.ROBOT3D) }
     }
 }
@@ -225,8 +254,10 @@ private fun SegItem(label: String, selected: Boolean, enabled: Boolean, onClick:
 @Composable
 private fun BottomBar(
     hmi: HmiState,
+    safety: SafetyMode,
     camOn: Boolean,
     onToggleCam: () -> Unit,
+    onEstop: () -> Unit,
     onSetGait: (String) -> Unit,
     onSetStanceTarget: (Int) -> Unit,
     onSetTempoTarget: (Int) -> Unit,
@@ -249,7 +280,7 @@ private fun BottomBar(
             }
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            EStopSlot()   // reservierte Position, disabled → Phase 6
+            EStopSlot(safety, onEstop)   // P6.8: scharf, immer sichtbar
             CamToggle(camOn, onToggleCam)
         }
     }
@@ -282,12 +313,69 @@ private fun FootChip(n: String, contact: Boolean?) {
     }
 }
 
+/**
+ * Scharfer E-STOP (P6.8) am reservierten Slot unten rechts: groß, voll-rot, **immer sichtbar &
+ * tappbar** (ein Not-Halt darf nie ausgegraut sein). Ein Tap → [onEstop] (`/hexapod_estop`), **ohne**
+ * Dead-Man/Dialog. **Tap-Rückmeldung:** kurzer Helligkeits-Puls ([flash]) — der wirkliche Erfolg wird
+ * über das Frozen-Banner (aus `status.safety_frozen`) sichtbar. Bei [SafetyMode.FROZEN] zeigt der
+ * Button einen dunkleren „latched/aktiv"-Ton.
+ */
 @Composable
-private fun EStopSlot() {
+private fun EStopSlot(safety: SafetyMode, onEstop: () -> Unit) {
+    var flash by remember { mutableStateOf(false) }
+    LaunchedEffect(flash) {
+        if (flash) { delay(ESTOP_FLASH_MS); flash = false }
+    }
+    val bg = when {
+        flash -> ESTOP_FLASH_RED               // heller Puls beim Tap
+        safety == SafetyMode.FROZEN -> ESTOP_LATCHED_RED
+        else -> ESTOP_ARMED_RED                // scharf, voll-rot
+    }
     Box(
-        Modifier.clip(RoundedCornerShape(6.dp)).background(Color(0x55B00020)).padding(horizontal = 10.dp, vertical = 6.dp),
+        Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(bg)
+            .clickable { flash = true; onEstop() }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
     ) {
-        Text("⛔ E-STOP", color = Color(0xFFEE9999), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+        Text("⛔ E-STOP", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+    }
+}
+
+/**
+ * Prominenter Safety-Banner (P6.9), zentriert, ohne Vollbild-Scrim (E-Stop/Fahren bleiben bedienbar).
+ * Der Aufrufer blendet ihn aus, solange ein Overlay-Panel offen ist (sonst verdeckt er dessen Inhalt).
+ * [SafetyMode.FROZEN] → „FROZEN — E-STOP" + Recover-Button + D6-Hinweis; [SafetyMode.RECOVERING] →
+ * „recovering …" (kein Button, bis STANDING); [SafetyMode.NORMAL] → nichts.
+ */
+@Composable
+private fun BoxScope.SafetyBanner(safety: SafetyMode, onRecover: () -> Unit) {
+    if (safety == SafetyMode.NORMAL) return
+    Column(
+        Modifier
+            .align(Alignment.Center)
+            .widthIn(max = 420.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(BANNER_RED)
+            .padding(horizontal = 20.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        when (safety) {
+            SafetyMode.FROZEN -> {
+                Text("⛔ FROZEN — E-STOP", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Place the robot roughly upright on level ground, then Recover — recovery does not right a toppled pose.",
+                    color = BANNER_HINT, style = MaterialTheme.typography.bodySmall,
+                )
+                Button(onClick = onRecover) { Text("Recover") }
+            }
+            SafetyMode.RECOVERING -> {
+                Text("recovering …", color = Color.White, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge)
+                Text("Joint-space ramp to stand …", color = BANNER_HINT, style = MaterialTheme.typography.bodySmall)
+            }
+            SafetyMode.NORMAL -> {}
+        }
     }
 }
 
@@ -314,6 +402,14 @@ private val SCRIM = Color(0x88000000)
 private val FOOT_CONTACT_GREEN = Color(0xFF2E7D32)
 private val PLACEHOLDER = Color(0xFF777777)
 private val LABEL_GREY = Color(0xFF999999)
+
+// --- Phase 6: E-STOP / Safety-Banner (P6.8/P6.9) ---
+private const val ESTOP_FLASH_MS = 600L        // Dauer des Tap-Puls am E-STOP
+private val ESTOP_ARMED_RED = Color(0xFFD32F2F)   // scharf
+private val ESTOP_LATCHED_RED = Color(0xFFB00020) // frozen/latched
+private val ESTOP_FLASH_RED = Color(0xFFFF5252)   // Tap-Puls (hell)
+private val BANNER_RED = Color(0xF0B00020)        // Banner-Hintergrund (fast opak)
+private val BANNER_HINT = Color(0xFFFFD9D9)       // D6-Hinweistext
 
 /** Leerer String → `null`, damit der Wert-Slot den Platzhalter „—" zeigt. */
 private fun String?.orNull(): String? = this?.takeIf { it.isNotEmpty() }

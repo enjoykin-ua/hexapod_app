@@ -219,6 +219,25 @@ rosbridge (host:9090) ──subscribe/publish──► RosbridgeClient.topicHand
 - **3D-Viz:** zero-dep FK+Iso-Projektion aus `/joint_states` (Geometrie statisch aus
   `hexapod_description`); `/joint_states` nur abonniert, solange die 3D-Ansicht aktiv ist.
 
+### 4.6 Ist-Zustand (Phase 6 — E-Stop scharf + Recover + frozen-Anzeige)
+
+Zwei sicherheitsrelevante Touch-Aktionen über den **bestehenden** `call_service`-Trigger-Pfad (kein
+neuer Transport, kein neues Interface). Interface = `interface_contract.md` **v0.10 §2/§6a**
+(`/hexapod_estop`, `/hexapod_recover`, beide `std_srvs/Trigger`; frozen aus `/hexapod/status.safety_frozen`).
+Details/ADRs: [`phase_6_estop_recovery_plan.md`](phase_6_estop_recovery_plan.md).
+
+| Datei | Rolle |
+|---|---|
+| `SafetyLogic.kt` (neu) | **reine** Logik: `SafetyMode`-Enum + `safetyMode(frozen,state,recoverRequested)` + Service-Const — unit-getestet (`SafetyLogicTest`, 6) |
+| `DriveScreen.kt` (erw.) | E-STOP-Slot **scharf** (voll-rot, immer sichtbar, Tap-Puls) → `onEstop`; **Safety-Banner** (Ebene 2, zentriert, englisch) „FROZEN — E-STOP" + Recover-Button (D6-Hinweis) / „recovering…"; Center-Labels englisch |
+| `MainActivity.kt` (erw.) | `callSafety(service)` → `ros.callService(/hexapod_estop \| /hexapod_recover)`, Response auf Main (nur Log) |
+
+**frozen-Ableitung:** ausschließlich aus `status.safety_frozen` (nicht aus der Service-Response,
+Contract §6a). `RECOVERING` nur nach bewusstem Recover-Tap (`recoverRequested`-Gate) bis `STANDING` →
+kein Fehl-„recovering" beim normalen Stand-up (der auch `STARTUP_RAMP` durchläuft). Der Banner ist
+**ausgeblendet, solange ein Overlay-Panel (config/alerts) offen ist**, und erscheint beim Schließen
+wieder (solange noch frozen). **Offen:** Sim-E2E (P6.11-Sim) + HW-T6.8.
+
 ### 4.4 Geplante Erweiterung (Richtung, keine Festlegung)
 
 Wächst phasenweise; jede neue Schicht kommt **erst bei Bedarf** und über den Version-Catalog:
@@ -228,7 +247,7 @@ Wächst phasenweise; jede neue Schicht kommt **erst bei Bedarf** und über den V
 | (offen) | **Show-Posen-Panel** — der `show`-Slot öffnet noch ein leeres Panel (Show-Toggle/`cmd_show`); nicht im P5-Scope | — |
 | Upgrade | Video-Latenz: RTSP/H.264 oder WebRTC (löst MJPEG ab) | **Media3/ExoPlayer** (dafür reserviert) |
 | 4+ | Verbindungs-/Foreground-Service (Netz-Lifecycle) — HMI-Subs sind seit Phase 5 an den Vordergrund gekoppelt (B4), ein Service würde das formalisieren | — |
-| 6 | E-Stop scharf + Recovery (`safety_freeze`/`safety_reset` + Recovery-Service) | — |
+| ~~6~~ | ~~E-Stop scharf + Recovery~~ → **erledigt (§4.6):** `/hexapod_estop` + `/hexapod_recover`, frozen aus Status | — |
 | 8 | Controller-Profil (JSON) statt fester Kishi-Abbildung [D8]; Auto-Reconnect; ViewModel/SavedState (Activity ist mit Phase 5 groß geworden) | — |
 
 > **Phase 5 ist umgesetzt (Ist-Zustand §4.5)** — die frühere „geplant"-Zeile dazu ist entfernt.

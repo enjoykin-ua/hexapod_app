@@ -2,20 +2,31 @@
 
 > **Rolling-Doc.** Wo wir stehen + wie es weitergeht. Überschreiben/aktualisieren beim
 > Phasenwechsel. Der ausführliche Stand liegt in
-> [`phase_5_status_config_plan.md`](phase_5_status_config_plan.md).
+> [`phase_6_estop_recovery_plan.md`](phase_6_estop_recovery_plan.md).
 >
-> **Letzter Stand:** 2026-07-18.
+> **Letzter Stand:** 2026-07-19.
 
 ---
 
 ## Wo wir stehen
 
-**Phase 5 — Status-Overlay + Config-Panel + Dropdowns + 3D-Viz.** App-Code **fertig & grün**
-(P5.10–P5.14): `assembleDebug` ✅, `testDebugUnitTest` **79/0** (neu: `FootLogicTest` 5,
-`ConfigLogicTest` 18, `CycleLogicTest` 3, `AlertLogicTest` 4, `Robot3dLogicTest` 5).
-**Offen:** **T5.15** = End-to-End-Live-Test (User + Handy) gegen die laufende ROS-Seite.
+**Phase 6 — E-Stop (scharf) + Recover + frozen-Anzeige.** App-Code **fertig & grün**
+(P6.8/P6.9): `testDebugUnitTest` **85/0** (neu: `SafetyLogicTest` 6), Main kompiliert.
+**Offen:** **P6.11-Sim** = End-to-End gegen den laufenden Sim-Stack (User + Handy), danach HW-**T6.8**.
 
-Was die App jetzt zusätzlich kann (Interface = `interface_contract.md` **v0.9.1 §6a**):
+Was die App jetzt zusätzlich kann (Interface = `interface_contract.md` **v0.10 §2/§6a**):
+- **E-STOP scharf** (reservierter Slot unten rechts, voll-rot, immer sichtbar, Tap-Puls) →
+  `call_service /hexapod_estop` (`Trigger`, wirkt Sim+HW). Kein Dead-Man, kein Dialog.
+- **frozen-Anzeige:** prominenter zentraler **Banner** „FROZEN — E-STOP" (englisch) sobald
+  `/hexapod/status.safety_frozen == true` (nicht aus der Service-Response abgeleitet); **ausgeblendet,
+  solange ein Overlay-Panel (config/alerts) offen ist**, kommt beim Schließen zurück (falls noch frozen).
+- **Recover-Button** (nur bei frozen) → `call_service /hexapod_recover` (`Trigger`) + D6-Hinweistext;
+  danach `STARTUP_RAMP → STANDING`, Banner „recovering …" → weg.
+- **Center-Toggle-Labels** jetzt englisch: **None / Video / 3D** (Rest der UI bleibt Deutsch).
+- Reine Logik in `SafetyLogic.kt` (`safetyMode()` + Service-Const), unit-getestet.
+
+**Phase 5** (Status-Overlay + Config-Panel + Dropdowns + 3D-Viz, `interface_contract.md` **v0.9.1 §6a**)
+war davor fertig & grün (P5.10–P5.14). Was die App aus Phase 5 kann:
 - **Overlay-Live-Daten:** `state`/`stance`/`gait`/`tempo`/`safety`/`tip`-Slots aus
   `/hexapod/status` (+ `/hexapod/tempo` gemergt); **Foot-Raster grün** aus `/foot_contacts`.
 - **Config-Panel** (`⚙ config`-Slot): generisch aus `/hexapod/config_manifest` (39 Params) —
@@ -32,17 +43,23 @@ mit Args** (get/set_parameters, SetBool) — der Phase-2/3-`/joy`-/Trigger-Pfad 
 
 ## Die zwei „Test"-Ebenen
 
-1. **App-Logik ohne Hardware** (`testDebugUnitTest`, 79/0): `ConfigLogic`/`CycleLogic`/`FootLogic`/
-   `AlertLogic`/`Robot3dLogic`. Der org.json-Glue (`HmiProtocol`, `RosbridgeClient`-Routing) +
-   Compose-Rendering sind bewusst **nicht** unit-getestet (SDK/Netz) → Integration.
-2. **Echtes Ausprobieren (T5.15):** braucht die laufende ROS-Seite (always_on → bringup_start →
+1. **App-Logik ohne Hardware** (`testDebugUnitTest`, **85/0**): `SafetyLogic`/`ConfigLogic`/`CycleLogic`/
+   `FootLogic`/`AlertLogic`/`Robot3dLogic`. Der org.json-Glue (`HmiProtocol`, `RosbridgeClient`-Routing)
+   + Compose-Rendering (inkl. E-STOP-Tap/Banner) sind bewusst **nicht** unit-getestet (SDK/Netz) → Integration.
+2. **Echtes Ausprobieren (P6.11-Sim / T5.15):** braucht die laufende ROS-Seite (always_on → bringup_start →
    stand_up). Die App *ist* der Client.
 
-## Nächster Schritt: Live-Integration T5.15 — Schritt für Schritt
+## Nächster Schritt: Live-Integration (P6.11-Sim + T5.15) — Schritt für Schritt
 
 **▶ ROS (hexapod_ws):** `always_on.launch.py` → (App) verbinden → `bringup_start` → `stand_up`.
 Ab `always_on` sind `capabilities`/`config_manifest`/`alerts` da; nach `bringup_start` fließen
 `status`/`tempo`/`foot_contacts`/`joint_states`.
+
+**▶ Phase-6-Check (E-Stop + Recover), am laufenden Sim-Stack:** aufstehen → laufen → **E-STOP
+tappen** (Slot unten rechts) → Banner „FROZEN — E-STOP"; gegenprüfen mit
+`ros2 topic echo /hexapod/status` → `safety_frozen: true`. → **Recover tappen** → Banner „recovering…",
+`state` `STARTUP_RAMP → STANDING`, Banner verschwindet, Roboter steht. (E-Stop-Ziel ist
+`/hexapod_estop`, NICHT `/hexapod_safety_freeze`.)
 
 **▶ App (dieses Repo):** `./gradlew installDebug` aufs S22+ (Wireless ADB → `docs/build_and_deploy.md`).
 
@@ -69,24 +86,25 @@ Ab `always_on` sind `capabilities`/`config_manifest`/`alerts` da; nach `bringup_
 ## Resume-Prompt (copy-paste in die App-Session)
 
 ```
-Wir sind in hexapod_app, Phase 5 (Status-Overlay + Config + Dropdowns + 3D). App-Code ist fertig
-und grün (P5.10–P5.14, 79/0), offen ist nur T5.15 (End-to-End-Live-Test). Kontext:
-docs/phase_5_status_config_plan.md + interface_contract.md v0.9.1 (§6a).
+Wir sind in hexapod_app, Phase 6 (E-Stop scharf + Recover + frozen-Anzeige). App-Code ist fertig
+und grün (P6.8/P6.9, 85/0), offen ist der Sim-E2E (P6.11-Sim). Kontext:
+docs/phase_6_estop_recovery_plan.md + interface_contract.md v0.10 (§2/§6a).
 
-Ich habe den Live-Test gemacht (ROS: always_on -> connect -> bringup_start -> stand_up). Ergebnis:
-- Overlay state/stance/gait/tempo/safety/tip + Foot-Raster: <ok / Fehler: …>
-- Config-Panel rendert + ± / Eintipp setzen live + Gating + Reject-reason: <…>
-- Dropdowns stance/gait/tempo: <…>
-- Alerts-Liste + Kopieren/Löschen: <…>
-- 3D-Viz animiert (Vorzeichen ok?): <…>
+Ich habe den Live-Test gemacht (ROS: always_on -> connect -> bringup_start -> stand_up -> laufen).
+Ergebnis:
+- E-STOP tappen -> Banner "FROZEN — E-STOP", /hexapod/status.safety_frozen=true: <ok / Fehler: …>
+- Recover tappen -> "recovering…" -> STARTUP_RAMP -> STANDING, Banner weg, steht: <…>
+- Center-Labels None/Video/3D + Tap-Puls am E-STOP: <…>
+(Phase-5-Overlay/Config/Dropdowns/Alerts/3D am selben Stack ggf. mitprüfen, falls T5.15 noch offen.)
 
-Justiere falls nötig (Foot-Index, 3D-Vorzeichen), hake T5.15 ab -> Phase 5 komplett.
+Hake P6.11-Sim ab -> Phase 6 App-Seite komplett (HW-T6.8 dann am echten Roboter).
 ```
 
 ## Danach
-- Stimmt alles → **T5.15 abhaken**, **Phase 5 komplett** → Planung **Phase 6** (E-Stop scharf +
-  Recovery; Contract `[TBD-Phase 6]`).
-- ROS-Seite (User): `phase_5_..._progress.md` App-Bullets P5.10–P5.13 abhaken.
+- Stimmt alles → **P6.11-Sim abhaken**, **Phase 6 App-Seite komplett** → HW-**T6.8** am echten
+  Roboter (mit User); ROS-Seite ist bereits implementiert + Sim-verifiziert.
+- ROS-Seite (User): `phase_6_..._progress.md` App-Bullets P6.8/P6.9 abhaken.
+- Falls **T5.15** (Phase-5-Live) noch offen war: am selben Stack mitprüfen und abhaken.
 
 ## Offene Altlasten / bewusst später
 - **3D-Vorzeichen** (femur/tibia/coxa) + **Foot-Index→Bein** erst am Live-Bild final justieren.

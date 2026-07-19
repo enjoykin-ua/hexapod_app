@@ -4,6 +4,7 @@ import android.hardware.input.InputManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -138,6 +139,8 @@ class MainActivity : ComponentActivity() {
                             onSetStanceTarget = { idx -> hmiController.startCycle(CycleKind.STANCE, idx) },
                             onSetTempoTarget = { idx -> hmiController.startCycle(CycleKind.TEMPO, idx) },
                             onClearAlerts = { hmi.alerts = emptyList() },
+                            onEstop = { callSafety(ESTOP_SERVICE) },
+                            onRecover = { callSafety(RECOVER_SERVICE) },
                             contentPadding = innerPadding,
                         )
                     }
@@ -289,6 +292,22 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // --- Phase 6: E-Stop + Recover (Trigger, leerer Request; wie die Lifecycle-Services) ---
+
+    /**
+     * E-STOP/Recover auslösen: bestehender `Trigger`-Pfad (leere Args). Der **frozen/recovered-
+     * Zustand wird NICHT aus dieser Response abgeleitet**, sondern aus `/hexapod/status.safety_frozen`
+     * (Contract §6a) — das Frozen-Banner ist die Erfolgs-Rückmeldung. Ein Fehlschlag (getrennt/Timeout/
+     * Service fehlt) wird v1 nur geloggt.
+     */
+    private fun callSafety(service: String) {
+        ros.callService(service) { result ->
+            mainHandler.post {
+                if (!result.ok) Log.w(TAG, "$service fehlgeschlagen: ${result.message}")
+            }
+        }
+    }
+
     override fun onPause() {
         super.onPause()
         isResumed = false
@@ -369,6 +388,7 @@ class MainActivity : ComponentActivity() {
     }
 
     companion object {
+        private const val TAG = "MainActivity"
         private const val PUBLISH_PERIOD_MS = 33L   // ~30 Hz (NF1: stetig, auch bei neutral)
         private const val VIDEO_MAX_RETRIES = 3     // Stream-Auto-Retry (Port 8080 vs. Status-Latenz)
         private const val VIDEO_RETRY_DELAY_MS = 1_500L
